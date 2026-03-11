@@ -1,24 +1,44 @@
 # BSD Library — Bridge System Document Components
 
-React component library for displaying and editing bridge bidding system documents. Provides a self-contained `Page` component that renders a complete document page with bid tables, rich text elements, hyperlinked navigation, and full inline editing.
+React component library for displaying and editing bridge bidding system documents and game analyses. The primary entry point is `SystemEditor`, which handles the complete **md + formatting → display → save → md + formatting** pipeline.
+
+## Architecture
+
+```
+                  ┌─────────────────────────────────────────────┐
+                  │                SystemEditor                  │
+                  │                                              │
+  md + formatting │  parseSystemMd ──► transformToPages ──► Render│
+       ──────────►│                                              │
+                  │  toSystemMd ◄── reverseTransformPages ◄── Save│
+       ◄──────────│                                              │
+  md + formatting │  (suit symbols, cross-refs, formatting)      │
+                  └─────────────────────────────────────────────┘
+```
+
+### Pipeline
+
+1. **Parse**: `parseSystemMd(md)` → intermediate structure (`{ systemName, description, rootElements, pages[] }`)
+2. **Transform**: `transformToPages(system, formatting)` → renderable `PageData[]` with suit symbol colorization, cross-reference link injection, formatting overlays
+3. **Render**: `Page` components with `BidTable` and `TextEl` elements
+4. **Reverse Transform**: `reverseTransformPages(pages, originalSystem)` → updated intermediate + formatting
+5. **Serialize**: `toSystemMd(system)` → markdown string
+
+### What lives where
+
+- **Markdown** is canonical content (headings, tables, prose, cross-references)
+- **Formatting** is visual-only JSONB (widths, colors, gridlines, row HTML overrides, column widths)
+- They are stored and round-tripped independently
 
 ## Installation
 
-Add as a local dependency in your `package.json`:
+Add as a local dependency:
 
 ```json
-{
-  "dependencies": {
-    "bsd-lib": "file:../bsd-lib"
-  }
-}
+{ "dependencies": { "bsd-lib": "file:../bsd-lib" } }
 ```
 
-Then run `npm install`.
-
 ### CSS Setup
-
-Your app's CSS must include:
 
 ```css
 @import "tailwindcss";
@@ -26,293 +46,172 @@ Your app's CSS must include:
 @import "bsd-lib/styles.css";
 ```
 
-- `@source` tells Tailwind to scan bsd-lib for utility classes
-- `@import "bsd-lib/styles.css"` loads contenteditable styles needed by the library
-
 ### Peer Dependencies
 
-These must be installed in your app:
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| `react` | ^19 | Core framework |
-| `react-dom` | ^19 | Portal rendering |
-| `re-resizable` | ^6 | Element and column resize handles |
-| `lucide-react` | ^0.5 | Icons |
-| `tailwindcss` | ^4 | Styling (utility classes used throughout) |
+react ^19, react-dom ^19, re-resizable ^6, lucide-react ^0.5, tailwindcss ^4, @tiptap/* ^3
 
 ## Quick Start
 
 ```jsx
-import { Page, PopupView } from 'bsd-lib';
+import { SystemEditor } from 'bsd-lib';
 
-<Page
-  initialPage={pageData}
-  mode="main"
-  onSave={(data) => savePage(data)}
-  availablePages={pages}
-  mainPageId={pageData.id}
-  onHyperlinkClick={handleNavigation}
-  startInEditMode={true}
+<SystemEditor
+  docId={doc.id}
+  md={doc.md}
+  formatting={doc.formatting}
+  onSave={async ({ md, formatting, systemName }) => {
+    await saveToDb({ md, formatting, name: systemName });
+  }}
+  onExit={() => navigate('/dashboard')}
+  startInEditMode={false}
+  startPageId={null}  // optional: deep-link to a specific page
 />
 ```
 
-## Components
+## Exports (`index.js`)
 
-### Page
+| Export | Description |
+|--------|-------------|
+| `SystemEditor` | Top-level component — the primary entry point |
+| `parseSystemMd` | Markdown → intermediate structure |
+| `toSystemMd` | Intermediate structure → markdown |
+| `Page` | Page renderer (used internally by SystemEditor) |
+| `PopupView` | Floating popup container |
+| `PageFormatPanel` | Page margins/spacing panel |
+| `TitleBar` | Editable page title |
+| `BidTable` | Nested bid table component |
+| `TextEl` | Rich text editor (default + cell modes) |
 
-The main entry point. A self-contained page component that manages its own state. The parent only provides initial data and handles save/navigation callbacks.
+## Markdown Format
 
-**Props:**
+```markdown
+---
+system: System Name
+description: Optional description
+---
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `initialPage` | `PageData` | Page data (title, elements, margins, spacing) |
-| `mode` | `'main' \| 'split' \| 'popup' \| 'newpage'` | Display mode (default: `'main'`) |
-| `onSave` | `(pageData) => void` | Main mode: called on save |
-| `onClose` | `() => void` | Sub-pages: called on X close |
-| `onPageChange` | `(pageData) => void` | Every mutation: live sync to parent |
-| `availablePages` | `[{id, name}]` | Pages for hyperlink targets |
-| `mainPageId` | `string` | Main page ID (excluded from link targets) |
-| `onHyperlinkClick` | `(target) => void` | Hyperlink navigation callback |
-| `startInEditMode` | `boolean` | Start in edit mode (default: `false`) |
-| `maxHeight` | `string` | Popup mode: CSS max-height (e.g. `'70vh'`) |
+##
+| [Page One|split] | summary |
+| [Page Two|popup] | summary |
 
-### PopupView
+# Page One
 
-Floating container for popup-mode pages. Positions near click point, supports drag, adjusts to viewport.
+## Table Name
+| 1NT | 15-17, balanced |
+|   2♣ | Stayman |
+|     2♦ | No 4-card major |
 
-```jsx
-<PopupView position={{ x: clickX, y: clickY }} zIndex={200}>
-  <Page mode="popup" ... />
-</PopupView>
+Prose text with **bold** and [Page Two|popup] links.
+
+### Subpage Name
+
+##
+| bid | meaning |
 ```
 
-### BidTable
+**Rules:**
+- `#` or `###` = page heading
+- `##` = table heading (within a page)
+- `| bid | meaning |` = table rows; nesting via 2-space indent in bid column
+- Cross-references: `[Page Name]` (split), `[Page Name|popup]`, `[Page Name|newtab]`
+- External links: `[text](https://url)`
+- Prose between structural markers = note elements
 
-Hierarchical N-column table for bidding sequences. Nested rows, column resize, merge, copy/paste, collapse/expand. Used internally by Page but also available standalone.
+## Suit Symbol Pipeline
 
-### TextEl
+```
+On load:  "1c" → "1♣"  (replaceSuitAbbreviations)
+          "1♣" → "1<span style='color:#007700'>♣</span>"  (colorizeSuitSymbols)
 
-Rich text element with inline formatting (bold, italic, color, hyperlinks), alignment, lists. Two modes: `default` (standalone page element) and `cell` (embedded in BidTable cells).
-
-## Page Modes
-
-| Mode | Use Case | Save | Close | Height |
-|------|----------|------|-------|--------|
-| `main` | Primary document | Save button | — | Fills parent |
-| `split` | Adjacent linked page | No (auto-sync) | X button | Fills parent |
-| `popup` | Floating linked page | No (auto-sync) | X button | Fits content (up to max) |
-| `newpage` | New tab linked page | No (auto-sync) | X button | Fills parent |
-
-## Data Structures
-
-### PageData
-
-```js
-{
-  id: 'page-1',
-  title: '1NT Opening',
-  titleHtml: '<span style="font-weight: 700">1NT Opening</span>',
-  elements: [
-    {
-      id: 'el-1',
-      type: 'bidtable',
-      order: 1,
-      rows: [
-        {
-          id: '1',
-          bid: '1NT',
-          columns: [
-            { value: '15-17 HCP, balanced' },
-            { value: 'Forcing' },
-          ],
-          children: [ /* nested rows */ ],
-        },
-      ],
-      name: '1NT System',
-      showName: true,
-      width: 680,
-      columnWidths: [450, 130],
-      levelWidths: { 0: 80 },
-      gridlines: { enabled: true, color: '#D1D5DB', width: 1 },
-      borderColor: '#d1d5db',
-      borderWidth: 1,
-    },
-    {
-      id: 'el-2',
-      type: 'text',
-      order: 2,
-      content: 'Notes about this system.',
-      htmlContent: '<b>Notes</b> about this system.',
-      width: 500,
-      borderColor: '#d1d5db',
-      borderWidth: 2,
-      fillColor: 'transparent',
-    },
-  ],
-  leftMargin: 20,
-  rightMargin: 20,
-  elementSpacing: 43,
-}
+On save:  colored spans → plain symbols  (stripSuitColorSpans)
 ```
 
-### Hyperlinks
+**Critical**: `replaceSuitAbbreviations` must NOT run on:
+- Link text (corrupts "Club" → "♣")
+- Base64 data (corrupts `<img>` hand diagrams)
+- HTML href attributes (corrupts page IDs like `page-over-1m2h`)
 
-Hyperlinks are embedded in rich text content as `<a>` tags:
+## Link System
 
-```html
-<a href="bridge://page-2/popup"
-   data-page-id="page-2"
-   data-link-mode="popup"
-   style="color: #2563eb; text-decoration: underline; cursor: pointer;">
-  Link text
-</a>
-```
+Four link modes:
 
-When clicked, `onHyperlinkClick` fires with:
+| Mode | Markdown | Behavior |
+|------|----------|----------|
+| `split` | `[Name\|split]` or `[Name]` | Opens page in adjacent split pane |
+| `popup` | `[Name\|popup]` | Opens page in floating popup overlay |
+| `newtab` | `[Name\|newtab]` | Opens page in new browser tab (`?doc=&page=`) |
+| `url` | `[text](https://...)` | Opens external URL in new tab |
 
-```js
-{
-  pageId: 'page-2',
-  pageName: 'Link text',
-  mode: 'popup',           // 'popup' | 'split' | 'newpage'
-  position: { x: 450, y: 300 },  // click coordinates
-}
-```
+Links are stored as `<a>` tags with `data-page-id` and `data-link-mode` attributes.
+`refreshLinkPageIds()` corrects stale page IDs using the current page name → ID lookup.
 
-### Link Filtering Rules
+## Game Display
 
-- A page cannot link to itself
-- The main page (`mainPageId`) cannot be linked from anywhere
-- Filtering is automatic — Page removes excluded pages before passing to child components
+Games use the same SystemEditor pipeline but with different content:
 
-## Integration Example
+- **Column 1 (bid)**: Hand diagram SVG as base64 `<img>` in `bidHtml` — rendered as raw HTML, not through Tiptap
+- **Column 2**: Bidding details — non-editable rich text
+- **Column 3**: Analysis — editable via native `contentEditable` to preserve inline bullet styles (`padding-left` + `text-indent` for hanging indent)
 
-Full example with main page, split view, and popup:
+The `htmlToGame()` converter (in bsd-app) transforms tournament HTML into md + formatting with this 3-column layout.
 
-```jsx
-import { useState } from 'react';
-import { Page, PopupView } from 'bsd-lib';
+## Key Components
 
-const ALL_PAGES = [
-  { id: 'page-1', name: 'Opening Bids' },
-  { id: 'page-2', name: 'Responses' },
-  { id: 'page-3', name: 'Slam Bidding' },
-];
+### SystemEditor (`components/SystemEditor.jsx`)
+Orchestrator for the full pipeline. Manages pages state, handles save/load, split/popup views, page creation, hyperlink click routing.
 
-function App() {
-  const [mainPage, setMainPage] = useState(loadPage('page-1'));
-  const [splitPage, setSplitPage] = useState(null);
-  const [popup, setPopup] = useState(null);
+### Page (`components/page/Page.jsx`)
+Container for a page. Modes: main, split, popup. Edit/view toggle, save/discard dialog, element selection, insert menu (add Table or Text), copy/paste elements.
 
-  const handleHyperlinkClick = (target) => {
-    const page = loadPage(target.pageId);
-    if (!page) return;
+### BidTable (`components/bid_table/BidTable.jsx`)
+Nested bid table. Row operations: add sibling/child, delete, collapse, copy/paste. Column operations: resize, merge, add/delete. Undo (Ctrl+Z). Optional name header.
 
-    if (target.mode === 'popup') {
-      setPopup({ position: target.position, page });
-    } else if (target.mode === 'split') {
-      setSplitPage(page);
-    } else if (target.mode === 'newpage') {
-      window.open(`/page/${target.pageId}`, '_blank');
-    }
-  };
-
-  return (
-    <div style={{ display: 'flex', gap: 24 }}>
-      <Page
-        initialPage={mainPage}
-        mode="main"
-        onSave={setMainPage}
-        availablePages={ALL_PAGES}
-        mainPageId={mainPage.id}
-        onHyperlinkClick={handleHyperlinkClick}
-        startInEditMode={true}
-      />
-
-      {splitPage && (
-        <Page
-          key={splitPage.id}
-          initialPage={splitPage}
-          mode="split"
-          onClose={() => setSplitPage(null)}
-          onPageChange={(data) => console.log('changed:', data)}
-          availablePages={ALL_PAGES}
-          mainPageId={mainPage.id}
-          onHyperlinkClick={handleHyperlinkClick}
-        />
-      )}
-
-      {popup && (
-        <PopupView position={popup.position} zIndex={200}>
-          <Page
-            key={popup.page.id}
-            initialPage={popup.page}
-            mode="popup"
-            maxHeight="70vh"
-            onClose={() => setPopup(null)}
-            onPageChange={(data) => console.log('changed:', data)}
-            availablePages={ALL_PAGES}
-            mainPageId={mainPage.id}
-            onHyperlinkClick={handleHyperlinkClick}
-          />
-        </PopupView>
-      )}
-    </div>
-  );
-}
-```
+### TextEl (`components/text_el/TextEl.jsx`)
+Rich text editor (Tiptap). Two modes: `default` (standalone with border/fill/resize) and `cell` (for BidTable cells). Three menus: text format, block format, element format. Hyperlink menu with 4 modes (popup/split/newtab/url).
 
 ## File Structure
 
 ```
 bsd-lib/
-  package.json                    Package metadata + peer dependencies
   index.js                        Main exports
-  styles.css                      Contenteditable CSS (import in your app)
-  utils/
-    rte/
-      index.js                    Rich text utility exports
-      history.js                  Undo/redo controller
-      selectionBookmarks.js       Selection preservation
-      normalizeNodeTree.js        DOM normalization
-      canonicalizeStyle.js        Style normalization
-      pasteSanitizer.js           Paste HTML sanitization
+  package.json                    Peer dependencies
+  styles.css                      Contenteditable CSS
+  lib/
+    parseSystemMd.js              Markdown → intermediate structure
+    toSystemMd.js                 Intermediate → markdown
+    suitSymbols.js                Suit abbreviation/symbol/color conversion
   components/
+    SystemEditor.jsx              Pipeline orchestrator (primary entry point)
+    EditorContext.js               React context (availablePages, callbacks)
     page/
-      Page.jsx                    Main page component (4 modes)
-      PopupView.jsx               Floating container for popups
-      TitleBar.jsx                Page title (TextEl wrapper)
+      Page.jsx                    Page component (4 modes)
+      PopupView.jsx               Floating popup container
+      TitleBar.jsx                Editable page title
       PageFormatPanel.jsx         Margins + spacing panel
-      types.js                    Constants + JSDoc types
-      index.js                    Barrel exports
     bid_table/
       BidTable.jsx                N-column hierarchical table
-      BidTableRow.jsx             Single row + recursion
+      BidTableRow.jsx             Single row + recursion + hand diagrams
       BidTableFormatPanel.jsx     Border, gridlines, row height
       BidTableNameHeader.jsx      Optional table name row
       ColorPicker.jsx             Bid cell fill color
-      types.js                    Constants + JSDoc types
-      index.js                    Barrel exports
     text_el/
       TextEl.jsx                  Rich text element (default + cell modes)
-      useRichText.js              ContentEditable hook
+      useTiptapEditor.js          Tiptap editor setup + hyperlink apply
+      BridgeLink.js               Custom Tiptap link extension
       TextFormatPanel.jsx         Bold, italic, color, hyperlink
       BlockFormatBar.jsx          Alignment, lists
       ElementFormatPanel.jsx      Border, fill, copy, delete, move
-      HyperlinkMenu.jsx           Page hyperlink creation
-      types.js                    Constants + JSDoc types
-      index.js                    Barrel exports
+      HyperlinkMenu.jsx           Link creation (popup/split/newtab/url)
+      Ruler.jsx                   Paragraph indent ruler
+      ParagraphIndent.js          Indent Tiptap extension
+      FontSize.js                 Font size Tiptap extension
+      ListStyleType.js            List style Tiptap extension
+      SmartLift.js                Smart list promotion (Shift+Tab)
   docs/
-    page.md                       Page module documentation
-    bid_table.md                  BidTable module documentation
-    text_el.md                    TextEl module documentation
-  README.md                       This file
+    page.md                       Page module docs
+    bid_table.md                  BidTable module docs
+    text_el.md                    TextEl module docs
+  test-data/
+    verify-roundtrip.mjs          Round-trip verification script
+    *.md, *.json                  Test data files
 ```
-
-## Detailed Documentation
-
-- [Page module](docs/page.md) — Page modes, save/discard, format panel, element operations
-- [BidTable module](docs/bid_table.md) — Row operations, column architecture, merge, copy/paste, resize
-- [TextEl module](docs/text_el.md) — Rich text modes, format menus, hyperlinks, selection behavior
