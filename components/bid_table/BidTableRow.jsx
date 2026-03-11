@@ -370,6 +370,10 @@ export function BidTableRow({
     const lastColInGroup = group.columnIndices[group.columnIndices.length - 1];
     const canColumnResize = !isLastGroup && isActive && !isViewMode && lastColInGroup < columnCount - 1;
 
+    // If column HTML has styled divs (e.g. game analysis with bullet indents),
+    // render as raw HTML to preserve inline styles that Tiptap would strip
+    const hasStyledDivs = primaryCol.html && /<div\s+style=/.test(primaryCol.html);
+
     const columnContent = (
       <div
         className="pr-1 py-1.5 pl-2"
@@ -380,24 +384,38 @@ export function BidTableRow({
           backgroundColor: 'white',
         }}
       >
-        <TextEl
-          mode="cell"
-          pageId={pageId}
-          value={primaryCol.value}
-          htmlValue={primaryCol.html}
-          onChange={(text, html) => {
-            const newColumns = [...row.columns];
-            newColumns[primaryColIndex] = { ...newColumns[primaryColIndex], value: text, html };
-            onUpdate(row.id, { columns: newColumns });
-          }}
-          placeholder={primaryColIndex === 0 ? "Meaning" : `Col ${primaryColIndex + 2}`}
-          minHeight={rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT}
-          readOnly={isViewMode}
-          onFocus={() => onRowFocus?.(row.id)}
-
-
-
-        />
+        {hasStyledDivs ? (
+          <div
+            className="px-2 py-1 text-sm leading-relaxed outline-none"
+            contentEditable={!isViewMode}
+            suppressContentEditableWarning
+            dangerouslySetInnerHTML={{ __html: primaryCol.html }}
+            onBlur={(e) => {
+              if (isViewMode) return;
+              const newHtml = e.currentTarget.innerHTML;
+              const newText = e.currentTarget.textContent || '';
+              const newColumns = [...row.columns];
+              newColumns[primaryColIndex] = { ...newColumns[primaryColIndex], value: newText, html: newHtml };
+              onUpdate(row.id, { columns: newColumns });
+            }}
+          />
+        ) : (
+          <TextEl
+            mode="cell"
+            pageId={pageId}
+            value={primaryCol.value}
+            htmlValue={primaryCol.html}
+            onChange={(text, html) => {
+              const newColumns = [...row.columns];
+              newColumns[primaryColIndex] = { ...newColumns[primaryColIndex], value: text, html };
+              onUpdate(row.id, { columns: newColumns });
+            }}
+            placeholder={primaryColIndex === 0 ? "Meaning" : `Col ${primaryColIndex + 2}`}
+            minHeight={rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT}
+            readOnly={isViewMode}
+            onFocus={() => onRowFocus?.(row.id)}
+          />
+        )}
 
         {/* Action menu - on every column group */}
         {renderActionMenu(primaryColIndex)}
@@ -501,21 +519,25 @@ export function BidTableRow({
           >
             <div ref={bidCellRef} className="pl-1.5 pr-1 py-1.5 flex items-center relative" data-column-type="bid">
               <div className="flex-1 relative">
-                {/* TextEl for bid cell */}
-                <TextEl
-                  mode="cell"
-                  pageId={pageId}
-                  value={row.bid}
-                  htmlValue={row.bidHtml}
-                  onChange={(text, html) => onUpdate(row.id, { bid: text, bidHtml: html })}
-                  placeholder="Bid"
-                  minHeight={rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT}
-                  readOnly={isViewMode}
-                  onFocus={() => onRowFocus?.(row.id)}
-        
-        
-        
-                />
+                {/* Bid cell: raw HTML for images (hand diagrams), TextEl otherwise */}
+                {row.bidHtml && row.bidHtml.includes('<img ') ? (
+                  <div
+                    className="px-2 py-1"
+                    dangerouslySetInnerHTML={{ __html: row.bidHtml }}
+                  />
+                ) : (
+                  <TextEl
+                    mode="cell"
+                    pageId={pageId}
+                    value={row.bid}
+                    htmlValue={row.bidHtml}
+                    onChange={(text, html) => onUpdate(row.id, { bid: text, bidHtml: html })}
+                    placeholder="Bid"
+                    minHeight={rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT}
+                    readOnly={isViewMode}
+                    onFocus={() => onRowFocus?.(row.id)}
+                  />
+                )}
 
                 {/* Collapse/Expand Triangle */}
                 {row.children.length > 0 && (

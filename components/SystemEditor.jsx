@@ -691,7 +691,10 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
       if (rf) {
         if (rf.bidHtml) {
           let bh = rf.bidHtml;
-          if (bh.includes('<a ')) {
+          if (bh.includes('<img ')) {
+            // Hand diagram images: use as-is, no suit conversion (base64 would be corrupted)
+            row.bidHtml = bh;
+          } else if (bh.includes('<a ')) {
             // Refresh stale page IDs in links; skip replaceSuitAbbreviations
             // to avoid corrupting link text (e.g. "Club" → "♣")
             bh = refreshLinkPageIds(bh, pageLookup);
