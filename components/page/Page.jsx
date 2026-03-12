@@ -43,6 +43,7 @@ export function Page({
   onEditModeChange,
   externalDirty = false,
   maxHeight,
+  readOnly = false,
 }) {
   const isMain = mode === 'main';
   const isPopup = mode === 'popup';
@@ -51,7 +52,7 @@ export function Page({
   // --- State ---
   const [page, setPage] = useState(() => JSON.parse(JSON.stringify(initialPage)));
   const pageRef = useRef(page);
-  const [isViewMode, setIsViewMode] = useState(isMain ? !startInEditMode : !editMode);
+  const [isViewMode, setIsViewMode] = useState(readOnly ? true : (isMain ? !startInEditMode : !editMode));
   const [isDirty, setIsDirty] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
@@ -680,7 +681,7 @@ export function Page({
             {/* Right: Edit (view mode only) + Exit (always) */}
             {isMain && (
               <div style={{ display: 'flex', gap: '8px' }}>
-                {isViewMode && (
+                {isViewMode && !readOnly && (
                   <button
                     onClick={() => { setIsViewMode(false); onEditModeChange?.(true); }}
                     style={{

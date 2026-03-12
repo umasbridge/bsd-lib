@@ -1000,7 +1000,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -1214,7 +1214,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
           onSave={handleSave}
           onExit={onExit}
           mainPageId="main"
-          startInEditMode={startInEditMode}
+          startInEditMode={readOnly ? false : startInEditMode}
+          readOnly={readOnly}
           onEditModeChange={setIsEditMode}
           externalDirty={hasUnsavedSubPageChanges}
         />
@@ -1231,7 +1232,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               onClose={() => setSplitStack((prev) => prev.slice(0, i))}
               onPageChange={handlePageChange}
               mainPageId="main"
-              editMode={isEditMode}
+              editMode={readOnly ? false : isEditMode}
+              readOnly={readOnly}
             />
           );
         })}
@@ -1246,7 +1248,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               onClose={() => { wsPopupSourceRef.current = null; setPopup(null); }}
               onPageChange={handlePageChange}
               mainPageId="main"
-              editMode={isEditMode}
+              editMode={readOnly ? false : isEditMode}
+              readOnly={readOnly}
             />
           </PopupView>
         )}
