@@ -32,6 +32,7 @@ const TITLE_ID = '__title__';
 export function Page({
   initialPage,
   mode = 'main',
+  narrowMode = false,
   onSave,
   onClose,
   onExit,
@@ -436,7 +437,7 @@ export function Page({
   // Popup mode: height fits content up to maxHeight, then scrolls
   // All other modes: fills available height
   const containerStyle = {
-    width: dynamicPageWidth,
+    width: narrowMode ? 200 : dynamicPageWidth,
     backgroundColor: 'white',
     border: '2px solid #d1d5db',
     borderRadius: '2px',
@@ -444,6 +445,7 @@ export function Page({
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+    flexShrink: narrowMode ? 0 : undefined,
   };
 
   if (isPopup) {
@@ -526,20 +528,34 @@ export function Page({
       </div>
 
       {/* Bottom button bar */}
-      <div
-        style={{ background: 'white', flexShrink: 0, padding: `12px ${leftMargin}px` }}
-        onMouseDown={(e) => e.preventDefault()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {/* Left: Insert + Paste (edit mode only) */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+      {narrowMode ? (
+        /* Narrow mode: Exit left, Insert right */
+        <div
+          style={{ background: 'white', flexShrink: 0, padding: '8px 4px' }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {isMain && (
+              <button
+                onClick={handleViewSaveToggle}
+                style={{
+                  padding: '4px 8px', fontSize: '12px', borderRadius: '4px', cursor: 'pointer',
+                  border: '1px solid #d1d5db', background: 'white',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+              >
+                Exit
+              </button>
+            )}
+            {!isMain && <div />}
             {!isViewMode && (
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowInsertMenu(prev => !prev)}
                   style={{
-                    padding: '6px 12px', fontSize: '14px', border: '1px solid #d1d5db',
-                    borderRadius: '6px', background: 'white', cursor: 'pointer',
+                    padding: '4px 8px', fontSize: '12px', border: '1px solid #d1d5db',
+                    borderRadius: '4px', background: 'white', cursor: 'pointer',
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
@@ -550,15 +566,15 @@ export function Page({
                   <div
                     data-insert-menu
                     style={{
-                      position: 'absolute', bottom: '100%', left: 0, marginBottom: '4px',
+                      position: 'absolute', bottom: '100%', right: 0, marginBottom: '4px',
                       background: 'white', border: '1px solid #d1d5db', borderRadius: '6px',
                       boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 30,
-                      minWidth: '120px', overflow: 'hidden',
+                      minWidth: '100px', overflow: 'hidden',
                     }}
                   >
                     <button
                       onClick={() => addElement('bidtable')}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      style={{ display: 'block', width: '100%', padding: '6px 10px', fontSize: '12px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >
@@ -566,7 +582,7 @@ export function Page({
                     </button>
                     <button
                       onClick={() => addElement('text')}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      style={{ display: 'block', width: '100%', padding: '6px 10px', fontSize: '12px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >
@@ -574,7 +590,7 @@ export function Page({
                     </button>
                     <button
                       onClick={() => addElement('toc')}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      style={{ display: 'block', width: '100%', padding: '6px 10px', fontSize: '12px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >
@@ -584,52 +600,115 @@ export function Page({
                 )}
               </div>
             )}
-            {!isViewMode && copiedElement && (
-              <button
-                onClick={pasteElement}
-                style={{
-                  padding: '6px 12px', fontSize: '14px', borderRadius: '6px', cursor: 'pointer',
-                  border: '1px solid #86efac', background: 'white', color: '#15803d',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f0fdf4'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
-              >
-                Paste
-              </button>
-            )}
           </div>
-
-          {/* Right: Edit (view mode only) + Exit (always) */}
-          {isMain && (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {isViewMode && (
+        </div>
+      ) : (
+        /* Normal mode: full button bar */
+        <div
+          style={{ background: 'white', flexShrink: 0, padding: `12px ${leftMargin}px` }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Left: Insert + Paste (edit mode only) */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {!isViewMode && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setShowInsertMenu(prev => !prev)}
+                    style={{
+                      padding: '6px 12px', fontSize: '14px', border: '1px solid #d1d5db',
+                      borderRadius: '6px', background: 'white', cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                  >
+                    Insert
+                  </button>
+                  {showInsertMenu && (
+                    <div
+                      data-insert-menu
+                      style={{
+                        position: 'absolute', bottom: '100%', left: 0, marginBottom: '4px',
+                        background: 'white', border: '1px solid #d1d5db', borderRadius: '6px',
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 30,
+                        minWidth: '120px', overflow: 'hidden',
+                      }}
+                    >
+                      <button
+                        onClick={() => addElement('bidtable')}
+                        style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        Table
+                      </button>
+                      <button
+                        onClick={() => addElement('text')}
+                        style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        Text
+                      </button>
+                      <button
+                        onClick={() => addElement('toc')}
+                        style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        TOC
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!isViewMode && copiedElement && (
                 <button
-                  onClick={() => { setIsViewMode(false); onEditModeChange?.(true); }}
+                  onClick={pasteElement}
                   style={{
-                    padding: '6px 12px', fontSize: '14px', border: '1px solid #d1d5db',
-                    borderRadius: '6px', background: 'white', cursor: 'pointer',
+                    padding: '6px 12px', fontSize: '14px', borderRadius: '6px', cursor: 'pointer',
+                    border: '1px solid #86efac', background: 'white', color: '#15803d',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f0fdf4'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                >
+                  Paste
+                </button>
+              )}
+            </div>
+
+            {/* Right: Edit (view mode only) + Exit (always) */}
+            {isMain && (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {isViewMode && (
+                  <button
+                    onClick={() => { setIsViewMode(false); onEditModeChange?.(true); }}
+                    style={{
+                      padding: '6px 12px', fontSize: '14px', border: '1px solid #d1d5db',
+                      borderRadius: '6px', background: 'white', cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                  >
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={handleViewSaveToggle}
+                  style={{
+                    padding: '6px 12px', fontSize: '14px', borderRadius: '6px', cursor: 'pointer',
+                    border: '1px solid #d1d5db', background: 'white',
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
                 >
-                  Edit
+                  Exit
                 </button>
-              )}
-              <button
-                onClick={handleViewSaveToggle}
-                style={{
-                  padding: '6px 12px', fontSize: '14px', borderRadius: '6px', cursor: 'pointer',
-                  border: '1px solid #d1d5db', background: 'white',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
-              >
-                Exit
-              </button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Save/Discard Dialog (main only) */}
       {isMain && showSaveDialog && (

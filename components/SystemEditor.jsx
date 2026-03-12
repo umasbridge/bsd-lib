@@ -185,11 +185,50 @@ function mapRow(row, pageLookup) {
 }
 
 
+/**
+ * Reorder parsed elements to match saved formatting order if they differ.
+ * Uses elementNames (saved during extractPageFormatting) to detect misalignment.
+ */
+function reorderElements(elements, pageFmt) {
+  const savedNames = pageFmt.elementNames;
+  if (!savedNames || savedNames.length === 0 || elements.length === 0) return elements;
+  if (elements.length !== savedNames.length) return elements;
+
+  // Build current name list from parsed elements
+  const currentNames = elements.map(el => {
+    if (el.type === 'table') return el.name || '';
+    if (el.type === 'note') return `__text__${(el.content || '').slice(0, 30)}`;
+    return `__${el.type}__`;
+  });
+
+  // Check if already aligned
+  const aligned = currentNames.every((n, i) => n === savedNames[i]);
+  if (aligned) return elements;
+
+  // Try to reorder: for each saved name, find the matching element
+  const remaining = [...elements];
+  const reordered = [];
+  for (const name of savedNames) {
+    const idx = remaining.findIndex(el => {
+      const elName = el.type === 'table' ? (el.name || '') :
+        el.type === 'note' ? `__text__${(el.content || '').slice(0, 30)}` :
+        `__${el.type}__`;
+      return elName === name;
+    });
+    if (idx !== -1) {
+      reordered.push(remaining.splice(idx, 1)[0]);
+    }
+  }
+  // Append any unmatched elements at the end
+  reordered.push(...remaining);
+  return reordered;
+}
+
 function buildPage(sourcePage, pageLookup, formatting) {
   const pageId = `page-${sourcePage.id}`;
   const pageFmt = formatting?.[pageId] || {};
   const pageElements = [];
-  const sourceElements = sourcePage.elements || [];
+  const sourceElements = reorderElements(sourcePage.elements || [], pageFmt);
 
   for (let i = 0; i < sourceElements.length; i++) {
     const el = sourceElements[i];
@@ -305,9 +344,12 @@ export function transformToPages(system, formatting) {
   // Build main page elements from root elements (no auto-generated TOC)
   const mainElements = [];
 
+  // Reorder root elements to match saved formatting order if needed
+  const orderedRootElements = reorderElements(rootElements, mainFmt);
+
   // Add root elements (elements before any # heading) to main page
-  for (let i = 0; i < rootElements.length; i++) {
-    const el = rootElements[i];
+  for (let i = 0; i < orderedRootElements.length; i++) {
+    const el = orderedRootElements[i];
     const elIdx = mainElements.length;
     const elFmt = mainFmt.elements?.[elIdx] || {};
 
@@ -391,6 +433,7 @@ export function transformToPages(system, formatting) {
       name: 'Table of Contents',
       nameHtml: '<span style="font-weight: 700">Table of Contents</span>',
       showName: true,
+      tocTable: true,
       width: tocFmt.width ?? 580,
       columnWidths: tocFmt.columnWidths ?? [430],
       levelWidths: tocFmt.levelWidths ?? { 0: 80 },
@@ -445,9 +488,12 @@ function htmlToBold(html) {
 
 function hyperlinksToRefs(html) {
   // Bridge links: data-link-mode attribute present
+  // Use ([\s\S]*?) to match link text that may contain nested <span> tags (e.g. suit color spans)
   let result = html.replace(
-    /<a\s[^>]*data-link-mode="([^"]*)"[^>]*>([^<]*)<\/a>/g,
-    (_, mode, text) => {
+    /<a\s[^>]*data-link-mode="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
+    (_, mode, innerHtml) => {
+      // Strip any nested HTML tags (suit color spans, etc.) to get plain text
+      const text = innerHtml.replace(/<[^>]*>/g, '');
       if (mode === 'popup') return `[${text}|popup]`;
       if (mode === 'newtab') return `[${text}|newtab]`;
       return `[${text}|split]`;
@@ -455,9 +501,10 @@ function hyperlinksToRefs(html) {
   );
   // External URLs: href starting with http(s), no data-link-mode
   result = result.replace(
-    /<a\s[^>]*href="(https?:\/\/[^"]*)"[^>]*>([^<]*)<\/a>/g,
-    (match, url, text) => {
+    /<a\s[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
+    (match, url, innerHtml) => {
       if (match.includes('data-link-mode')) return match; // already handled above
+      const text = innerHtml.replace(/<[^>]*>/g, '');
       return `[${text}](${url})`;
     }
   );
@@ -831,12 +878,20 @@ function extractPageFormatting(pageData) {
   if (pageData.elementSpacing !== undefined && pageData.elementSpacing !== 30) fmt.elementSpacing = pageData.elementSpacing;
   if (pageData.titleHtml && !pageData.titleHtml.match(/^<span style="font-weight: 700">.+<\/span>$/)) fmt.titleHtml = pageData.titleHtml;
 
-  const elements = [...(pageData.elements || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const elements = [...(pageData.elements || [])].filter(el => !el.popupOnly).sort((a, b) => (a.order || 0) - (b.order || 0));
   const elFmts = elements.map(extractElementFormatting);
 
   if (elFmts.some(Boolean)) {
     fmt.elements = elFmts.map(f => f || {});
   }
+
+  // Save element names/types so we can detect and fix order misalignment on reload
+  const elNames = elements.map(el => {
+    if (el.type === 'bidtable') return el.name || '';
+    if (el.type === 'text') return `__text__${(el.content || '').slice(0, 30)}`;
+    return `__${el.type}__`;
+  });
+  if (elNames.length > 0) fmt.elementNames = elNames;
 
   return Object.keys(fmt).length > 0 ? fmt : null;
 }
@@ -866,7 +921,7 @@ function reverseTransformPages(pages, originalSystem) {
     };
 
     if (pageData) {
-      const elements = [...(pageData.elements || [])].sort(
+      const elements = [...(pageData.elements || [])].filter(el => !el.popupOnly).sort(
         (a, b) => (a.order || 0) - (b.order || 0)
       );
       for (const el of elements) {
@@ -918,10 +973,10 @@ function reverseTransformPages(pages, originalSystem) {
     }
   }
 
-  // Extract root elements from main page (all elements)
+  // Extract root elements from main page (exclude popupOnly)
   const rootElements = [];
   if (mainPage) {
-    const sortedEls = [...(mainPage.elements || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const sortedEls = [...(mainPage.elements || [])].filter(el => !el.popupOnly).sort((a, b) => (a.order || 0) - (b.order || 0));
     for (const el of sortedEls) {
       const reversed = reverseElement(el);
       if (reversed) rootElements.push(reversed);
@@ -958,7 +1013,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
 
   const [pages, setPages] = useState(initialPages);
   const pagesRef = useRef(initialPages);
-  const [splitPage, setSplitPage] = useState(null);
+  const [splitStack, setSplitStack] = useState([]);
   const [popup, setPopup] = useState(null);
   const [isEditMode, setIsEditMode] = useState(startInEditMode);
   const [hasUnsavedSubPageChanges, setHasUnsavedSubPageChanges] = useState(false);
@@ -1074,7 +1129,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     if (target.mode === 'popup') {
       setPopup({ position, page: targetPage });
     } else {
-      setSplitPage(targetPage);
+      setSplitStack((prev) => [...prev, targetPage]);
     }
   }, [docId]);
 
@@ -1155,6 +1210,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
         <Page
           key={mainPage.id}
           initialPage={mainPage}
+          narrowMode={splitStack.length > 1}
           onSave={handleSave}
           onExit={onExit}
           mainPageId="main"
@@ -1163,18 +1219,22 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
           externalDirty={hasUnsavedSubPageChanges}
         />
 
-        {splitPage && (
-          <Page
-            key={splitPage.id}
-            initialPage={splitPage}
-            mode="split"
-            onSave={handleSave}
-            onClose={() => setSplitPage(null)}
-            onPageChange={handlePageChange}
-            mainPageId="main"
-            editMode={isEditMode}
-          />
-        )}
+        {splitStack.map((sp, i) => {
+          const isLast = i === splitStack.length - 1;
+          return (
+            <Page
+              key={sp.id}
+              initialPage={sp}
+              mode="split"
+              narrowMode={!isLast}
+              onSave={handleSave}
+              onClose={() => setSplitStack((prev) => prev.slice(0, i))}
+              onPageChange={handlePageChange}
+              mainPageId="main"
+              editMode={isEditMode}
+            />
+          );
+        })}
 
         {popup && (
           <PopupView position={popup.position} zIndex={200}>
