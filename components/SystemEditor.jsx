@@ -307,32 +307,6 @@ function buildPage(sourcePage, pageLookup, formatting) {
   };
 }
 
-/**
- * Scan all bidtable row HTML for data-workspace / data-workspace-link attributes.
- * Returns a Set of lowercase target names.
- */
-function collectWorkspaceLinkTargets(pages) {
-  const targets = new Set();
-  const re = /data-workspace(?:-link)?="([^"]+)"/g;
-  for (const page of pages) {
-    for (const el of page.elements || []) {
-      if (el.type !== 'bidtable') continue;
-      const walkRows = (rows) => {
-        for (const row of rows) {
-          for (const html of [row.bidHtml, row.columns?.[0]?.html]) {
-            if (!html) continue;
-            let m;
-            re.lastIndex = 0;
-            while ((m = re.exec(html)) !== null) targets.add(m[1].toLowerCase());
-          }
-          if (row.children?.length > 0) walkRows(row.children);
-        }
-      };
-      walkRows(el.rows || []);
-    }
-  }
-  return targets;
-}
 
 export function transformToPages(system, formatting) {
   _rowIdCounter = 0;
@@ -460,16 +434,6 @@ export function transformToPages(system, formatting) {
 
   for (const sourcePage of sourcePages) {
     pages.push(buildPage(sourcePage, pageLookup, formatting));
-  }
-
-  // Mark tables whose name matches a workspace-link target as popupOnly
-  const wsTargets = collectWorkspaceLinkTargets(pages);
-  for (const page of pages) {
-    for (const el of page.elements || []) {
-      if (el.type === 'bidtable' && el.name && wsTargets.has(el.name.toLowerCase())) {
-        el.popupOnly = true;
-      }
-    }
   }
 
   return pages;
@@ -878,7 +842,7 @@ function extractPageFormatting(pageData) {
   if (pageData.elementSpacing !== undefined && pageData.elementSpacing !== 30) fmt.elementSpacing = pageData.elementSpacing;
   if (pageData.titleHtml && !pageData.titleHtml.match(/^<span style="font-weight: 700">.+<\/span>$/)) fmt.titleHtml = pageData.titleHtml;
 
-  const elements = [...(pageData.elements || [])].filter(el => !el.popupOnly).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const elements = [...(pageData.elements || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
   const elFmts = elements.map(extractElementFormatting);
 
   if (elFmts.some(Boolean)) {
@@ -921,7 +885,7 @@ function reverseTransformPages(pages, originalSystem) {
     };
 
     if (pageData) {
-      const elements = [...(pageData.elements || [])].filter(el => !el.popupOnly).sort(
+      const elements = [...(pageData.elements || [])].sort(
         (a, b) => (a.order || 0) - (b.order || 0)
       );
       for (const el of elements) {
@@ -973,10 +937,10 @@ function reverseTransformPages(pages, originalSystem) {
     }
   }
 
-  // Extract root elements from main page (exclude popupOnly)
+  // Extract root elements from main page
   const rootElements = [];
   if (mainPage) {
-    const sortedEls = [...(mainPage.elements || [])].filter(el => !el.popupOnly).sort((a, b) => (a.order || 0) - (b.order || 0));
+    const sortedEls = [...(mainPage.elements || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
     for (const el of sortedEls) {
       const reversed = reverseElement(el);
       if (reversed) rootElements.push(reversed);
@@ -1017,35 +981,18 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const [popup, setPopup] = useState(null);
   const [isEditMode, setIsEditMode] = useState(startInEditMode);
   const [hasUnsavedSubPageChanges, setHasUnsavedSubPageChanges] = useState(false);
-
-  // Track workspace popup source (ref avoids stale closure issues)
-  const wsPopupSourceRef = useRef(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Sync sub-page edits back to pages state.
   // Uses pagesRef so handleSave always sees the latest data synchronously,
   // even if React hasn't flushed the setPages update yet.
+  // Lightweight sync for main page: update ref only, no setPages (avoids re-render cascade)
+  const handleMainPageChange = useCallback((pageData) => {
+    pagesRef.current = pagesRef.current.map(p => p.id === pageData.id ? pageData : p);
+  }, []);
+
   const handlePageChange = useCallback((pageData) => {
-    const wsSource = wsPopupSourceRef.current;
-    if (wsSource && pageData.id === wsSource.popupId) {
-      // Workspace popup: write edits back to the source table element
-      const { pageId, elementIndex } = wsSource;
-      pagesRef.current = pagesRef.current.map(p => {
-        if (p.id !== pageId) return p;
-        const newElements = [...p.elements];
-        const editedEl = pageData.elements[0];
-        if (editedEl) {
-          const origEl = newElements[elementIndex];
-          newElements[elementIndex] = {
-            ...editedEl,
-            id: origEl.id,
-            popupOnly: origEl.popupOnly,
-          };
-        }
-        return { ...p, elements: newElements };
-      });
-    } else {
-      pagesRef.current = pagesRef.current.map(p => p.id === pageData.id ? pageData : p);
-    }
+    pagesRef.current = pagesRef.current.map(p => p.id === pageData.id ? pageData : p);
     setPages(pagesRef.current);
     setHasUnsavedSubPageChanges(true);
   }, []);
@@ -1077,41 +1024,28 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     setHasUnsavedSubPageChanges(false);
   }, [onSave]);
 
-  const handleHyperlinkClick = useCallback((target) => {
-    // Workspace link: find matching table and open as popup
-    if (target.mode === 'scroll' && target.wsLink) {
-      const wsName = target.wsLink;
-      // Search all pages for a matching named table element
-      for (const page of pages) {
-        const elements = page.elements || [];
-        for (let elIdx = 0; elIdx < elements.length; elIdx++) {
-          const el = elements[elIdx];
-          if (el.type !== 'bidtable' || !el.name) continue;
-          const nameMatch = el.name === wsName ||
-            el.name.toLowerCase() === wsName.toLowerCase() ||
-            el.name.toLowerCase().includes(wsName.toLowerCase()) ||
-            wsName.toLowerCase().includes(el.name.toLowerCase());
-          if (nameMatch) {
-            const popupId = `popup-ws-${Date.now()}`;
-            const popupPage = {
-              id: popupId,
-              title: el.name,
-              titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(el.name)}</span>`,
-              leftMargin: 20,
-              rightMargin: 20,
-              elementSpacing: 30,
-              elements: [{ ...el, id: `popup-el-0`, popupOnly: false }],
-            };
-            wsPopupSourceRef.current = { popupId, pageId: page.id, elementIndex: elIdx };
-            const position = target.position || { x: 400, y: 300 };
-            setPopup({ position, page: popupPage });
-            return;
-          }
-        }
-      }
-      return;
+  // Save all pages as-is (used by tab-bar exit dialog)
+  const handleFullSave = useCallback(async () => {
+    if (onSave && systemRef.current) {
+      const { system, formatting } = reverseTransformPages(pagesRef.current, systemRef.current);
+      const newMd = toSystemMd(system);
+      systemRef.current = system;
+      formattingRef.current = formatting;
+      await onSave({ md: newMd, formatting, systemName: system.systemName });
     }
+    setHasUnsavedSubPageChanges(false);
+  }, [onSave]);
 
+  // Tab-bar exit: show save dialog if in edit mode, otherwise exit directly
+  const handleExitClick = useCallback(() => {
+    if (isEditMode) {
+      setShowExitDialog(true);
+    } else {
+      onExit?.();
+    }
+  }, [isEditMode, onExit]);
+
+  const handleHyperlinkClick = useCallback((target) => {
     // newtab mode: open page in a new browser tab
     if (target.mode === 'newtab' && target.pageId) {
       const url = new URL(window.location.href);
@@ -1294,7 +1228,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               )}
               {onExit && (
                 <button
-                  onClick={onExit}
+                  onClick={handleExitClick}
                   style={{
                     padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
                     borderRadius: '4px', background: 'white', cursor: 'pointer', whiteSpace: 'nowrap',
@@ -1327,6 +1261,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                   initialPage={entry.page}
                   onSave={handleSave}
                   onExit={onExit}
+                  onPageChange={handleMainPageChange}
                   mainPageId="main"
                   startInEditMode={readOnly ? false : startInEditMode}
                   readOnly={readOnly}
@@ -1360,13 +1295,56 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               initialPage={popup.page}
               mode="popup"
               maxHeight="70vh"
-              onClose={() => { wsPopupSourceRef.current = null; setPopup(null); }}
+              onClose={() => setPopup(null)}
               onPageChange={handlePageChange}
               mainPageId="main"
               editMode={readOnly ? false : isEditMode}
               readOnly={readOnly}
             />
           </PopupView>
+        )}
+
+        {/* Save/Discard dialog for tab-bar exit */}
+        {showExitDialog && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300,
+            }}
+            onClick={() => setShowExitDialog(false)}
+          >
+            <div
+              style={{
+                background: 'white', borderRadius: '8px', padding: '24px',
+                minWidth: '300px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p style={{ fontSize: '15px', color: '#374151', marginBottom: '20px' }}>
+                You have unsaved changes.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  onClick={() => { setShowExitDialog(false); onExit?.(); }}
+                  style={{
+                    padding: '6px 14px', fontSize: '14px', border: '1px solid #d1d5db',
+                    borderRadius: '6px', background: 'white', cursor: 'pointer',
+                  }}
+                >
+                  Discard changes
+                </button>
+                <button
+                  onClick={async () => { setShowExitDialog(false); await handleFullSave(); onExit?.(); }}
+                  style={{
+                    padding: '6px 14px', fontSize: '14px', borderRadius: '6px', cursor: 'pointer',
+                    border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', fontWeight: 500,
+                  }}
+                >
+                  Save changes
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </EditorProvider>

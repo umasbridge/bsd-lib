@@ -174,8 +174,7 @@ export function Page({
 
   const moveElement = useCallback((elementId, direction) => {
     const cur = pageRef.current;
-    const sorted = [...cur.elements].filter(el => !el.popupOnly).sort((a, b) => a.order - b.order);
-    const popupOnly = cur.elements.filter(el => el.popupOnly);
+    const sorted = [...cur.elements].sort((a, b) => a.order - b.order);
     const idx = sorted.findIndex(e => e.id === elementId);
     if (idx === -1) return;
     if (direction === 'up' && idx > 0) {
@@ -189,7 +188,7 @@ export function Page({
     }
     // Re-index with sequential orders to avoid duplicates
     const reordered = sorted.map((el, i) => ({ ...el, order: i + 1 }));
-    const updatedPage = { ...cur, elements: [...reordered, ...popupOnly] };
+    const updatedPage = { ...cur, elements: reordered };
     pageRef.current = updatedPage;
     setPage(updatedPage);
     notifyParent(updatedPage);
@@ -304,7 +303,7 @@ export function Page({
 
   // --- Derived values ---
   const sortedElements = useMemo(() =>
-    [...page.elements].filter(el => !el.popupOnly).sort((a, b) => a.order - b.order),
+    [...page.elements].sort((a, b) => a.order - b.order),
     [page.elements]
   );
 

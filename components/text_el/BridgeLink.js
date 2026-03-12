@@ -125,7 +125,14 @@ export const BridgeLink = Link.extend({
             }
 
             if (href.startsWith('bridge://')) {
-              const parts = href.replace('bridge://', '').split('/');
+              const bridgePath = href.replace('bridge://', '');
+              // bridge://ws/<name> → workspace link
+              if (bridgePath.startsWith('ws/')) {
+                const wsName = decodeURIComponent(bridgePath.slice(3));
+                cb({ wsLink: wsName, pageName: anchor.textContent || '', mode: 'scroll', position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
+                return true;
+              }
+              const parts = bridgePath.split('/');
               const mode = parts[1] || 'popup';
               cb({ pageId: parts[0], pageName: anchor.textContent || '', mode, position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
               return true;
