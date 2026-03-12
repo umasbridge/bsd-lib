@@ -92,15 +92,15 @@ function markdownListsToHtml(text) {
 }
 
 function splitLink(text, pageId) {
-  return `<a href="bridge://${pageId}/split" data-page-id="${pageId}" data-link-mode="split" style="color: inherit; text-decoration: underline; cursor: pointer;">${text}</a>`;
+  return `<a href="bridge://${pageId}/split" data-page-id="${pageId}" data-link-mode="split" style="color: #2563eb; text-decoration: underline; cursor: pointer;">${text}</a>`;
 }
 
 function popupLink(text, pageId) {
-  return `<a href="bridge://${pageId}/popup" data-page-id="${pageId}" data-link-mode="popup" style="color: inherit; text-decoration: underline; cursor: pointer;">${text}</a>`;
+  return `<a href="bridge://${pageId}/popup" data-page-id="${pageId}" data-link-mode="popup" style="color: #2563eb; text-decoration: underline; cursor: pointer;">${text}</a>`;
 }
 
 function newtabLink(text, pageId) {
-  return `<a href="bridge://${pageId}/newtab" data-page-id="${pageId}" data-link-mode="newtab" style="color: inherit; text-decoration: underline; cursor: pointer;">${text}</a>`;
+  return `<a href="bridge://${pageId}/newtab" data-page-id="${pageId}" data-link-mode="newtab" style="color: #2563eb; text-decoration: underline; cursor: pointer;">${text}</a>`;
 }
 
 /**
