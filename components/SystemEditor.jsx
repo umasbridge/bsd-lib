@@ -92,15 +92,15 @@ function markdownListsToHtml(text) {
 }
 
 function splitLink(text, pageId) {
-  return `<a href="bridge://${pageId}/split" data-page-id="${pageId}" data-link-mode="split" style="color: #2563eb; text-decoration: underline; cursor: pointer;">${text}</a>`;
+  return `<a href="bridge://${pageId}/split" data-page-id="${pageId}" data-link-mode="split" style="color: inherit; text-decoration: underline; cursor: pointer;">${text}</a>`;
 }
 
 function popupLink(text, pageId) {
-  return `<a href="bridge://${pageId}/popup" data-page-id="${pageId}" data-link-mode="popup" style="color: #2563eb; text-decoration: underline; cursor: pointer;">${text}</a>`;
+  return `<a href="bridge://${pageId}/popup" data-page-id="${pageId}" data-link-mode="popup" style="color: inherit; text-decoration: underline; cursor: pointer;">${text}</a>`;
 }
 
 function newtabLink(text, pageId) {
-  return `<a href="bridge://${pageId}/newtab" data-page-id="${pageId}" data-link-mode="newtab" style="color: #2563eb; text-decoration: underline; cursor: pointer;">${text}</a>`;
+  return `<a href="bridge://${pageId}/newtab" data-page-id="${pageId}" data-link-mode="newtab" style="color: inherit; text-decoration: underline; cursor: pointer;">${text}</a>`;
 }
 
 /**
@@ -131,14 +131,14 @@ function injectCrossReferences(text, pageLookup) {
     const parts = inner.split('|');
     const name = parts[0].trim();
     const mode = parts[1]?.trim().toLowerCase() || 'split';
-    // Strip suit color spans (e.g. <span style="color:...">♥</span> → ♥)
-    // so lookup works even when colorizeSuitSymbols ran before us
+    // Strip suit color spans for lookup, but keep colorized version for display
     const cleanName = stripSuitColorSpans(name);
+    const displayName = colorizeSuitSymbols(replaceSuitAbbreviations(cleanName));
     const pageId = pageLookup[cleanName.toLowerCase()];
     if (pageId) {
-      if (mode === 'popup') return popupLink(cleanName, pageId);
-      if (mode === 'newtab') return newtabLink(cleanName, pageId);
-      return splitLink(cleanName, pageId);
+      if (mode === 'popup') return popupLink(displayName, pageId);
+      if (mode === 'newtab') return newtabLink(displayName, pageId);
+      return splitLink(displayName, pageId);
     }
     return cleanName;
   });
@@ -157,8 +157,7 @@ function mapRow(row, pageLookup) {
   // "2 Club Opening" don't get corrupted to "2 ♣ Opening"
   const bidRefResolved = injectCrossReferences(rawBid, pageLookup);
   const hasBidLink = bidRefResolved !== rawBid;
-  // For display: apply suit conversion only to non-link bids
-  let bidDisplay = hasBidLink ? rawBid : colorizeSuitSymbols(replaceSuitAbbreviations(rawBid));
+  let bidDisplay = colorizeSuitSymbols(replaceSuitAbbreviations(rawBid));
   const mapped = {
     id: uid(),
     bid: bidDisplay,
@@ -258,8 +257,10 @@ function buildPage(sourcePage, pageLookup, formatting) {
 
   return {
     id: pageId,
-    title: sourcePage.name,
-    titleHtml: `<span style="font-weight: 700">${sourcePage.name}</span>`,
+    title: replaceSuitAbbreviations(sourcePage.name),
+    titleHtml: colorizeSuitSymbols(stripSuitColorSpans(
+      pageFmt.titleHtml || `<span style="font-weight: 700">${replaceSuitAbbreviations(sourcePage.name)}</span>`
+    )),
     leftMargin: pageFmt.leftMargin ?? 20,
     rightMargin: pageFmt.rightMargin ?? 20,
     elementSpacing: pageFmt.elementSpacing ?? 30,
@@ -377,8 +378,8 @@ export function transformToPages(system, formatting) {
       const pageId = `page-${sp.id}`;
       return {
         id: `toc-${i + 1}`,
-        bid: sp.name,
-        bidHtml: splitLink(sp.name, pageId),
+        bid: replaceSuitAbbreviations(sp.name),
+        bidHtml: splitLink(colorizeSuitSymbols(replaceSuitAbbreviations(sp.name)), pageId),
         columns: [{ value: '' }],
         children: [],
       };
@@ -403,7 +404,9 @@ export function transformToPages(system, formatting) {
   const mainPage = {
     id: 'main',
     title: systemName,
-    titleHtml: mainFmt.titleHtml || `<span style="font-weight: 700">${systemName}</span>`,
+    titleHtml: colorizeSuitSymbols(stripSuitColorSpans(
+      mainFmt.titleHtml || `<span style="font-weight: 700">${replaceSuitAbbreviations(systemName)}</span>`
+    )),
     leftMargin: mainFmt.leftMargin ?? 20,
     rightMargin: mainFmt.rightMargin ?? 20,
     elementSpacing: mainFmt.elementSpacing ?? 30,
@@ -711,10 +714,11 @@ function refreshLinkPageIds(html, pageLookup) {
       if (!newPageId) return match;
       const modeMatch = attrs.match(/data-link-mode="([^"]*)"/);
       const mode = modeMatch ? modeMatch[1] : 'split';
-      const newAttrs = attrs
-        .replace(/data-page-id="[^"]*"/, `data-page-id="${newPageId}"`)
-        .replace(/href="bridge:\/\/[^"]*"/, `href="bridge://${newPageId}/${mode}"`);
-      return `<a ${newAttrs}>${innerHtml}</a>`;
+      // Re-colorize display text and rebuild link with current styles
+      const displayText = colorizeSuitSymbols(replaceSuitAbbreviations(cleanText));
+      if (mode === 'popup') return popupLink(displayText, newPageId);
+      if (mode === 'newtab') return newtabLink(displayText, newPageId);
+      return splitLink(displayText, newPageId);
     }
   );
 }
@@ -749,13 +753,9 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
             if (rf.columns[i]?.html) {
               let colHtml = rf.columns[i].html;
               if (colHtml.includes('<a ')) {
-                // Refresh stale page IDs in links
                 colHtml = refreshLinkPageIds(colHtml, pageLookup);
-              } else {
-                colHtml = stripSuitColorSpans(colHtml);
-                colHtml = replaceSuitAbbreviations(colHtml);
-                colHtml = colorizeSuitSymbols(colHtml);
               }
+              colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
               row.columns[i].html = colHtml;
             }
           }
@@ -764,11 +764,8 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
           let colHtml = rf.html;
           if (colHtml.includes('<a ')) {
             colHtml = refreshLinkPageIds(colHtml, pageLookup);
-          } else {
-            colHtml = stripSuitColorSpans(colHtml);
-            colHtml = replaceSuitAbbreviations(colHtml);
-            colHtml = colorizeSuitSymbols(colHtml);
           }
+          colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
           row.columns[0].html = colHtml;
         }
       }
@@ -1044,7 +1041,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
             const popupPage = {
               id: popupId,
               title: el.name,
-              titleHtml: `<span style="font-weight: 700">${el.name}</span>`,
+              titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(el.name)}</span>`,
               leftMargin: 20,
               rightMargin: 20,
               elementSpacing: 30,
@@ -1093,7 +1090,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     const newPage = {
       id: pageId,
       title: pageName,
-      titleHtml: `<span style="font-weight: 700">${pageName}</span>`,
+      titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(pageName)}</span>`,
       leftMargin: 20,
       rightMargin: 20,
       elementSpacing: 30,
