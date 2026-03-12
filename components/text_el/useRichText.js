@@ -304,23 +304,30 @@ export function useRichText(options) {
       const anchor = target.closest('a');
       if (anchor) {
         e.preventDefault();
+        // Gather source context: which page the link is on and the cell boundary
+        // Start from anchor's parent to avoid matching the anchor's own data-page-id (target)
+        const sourcePageEl = anchor.parentElement?.closest('[data-page-id]');
+        const sourcePageId = sourcePageEl ? sourcePageEl.getAttribute('data-page-id') : null;
+        const cell = anchor.closest('td');
+        const cellRight = cell ? cell.getBoundingClientRect().right : null;
+
         const pageId = anchor.getAttribute('data-page-id');
         if (pageId) {
           const linkMode = anchor.getAttribute('data-link-mode') || 'popup';
-          onHyperlinkClick({ pageId, pageName: anchor.textContent || '', mode: linkMode, position: { x: e.clientX, y: e.clientY } });
+          onHyperlinkClick({ pageId, pageName: anchor.textContent || '', mode: linkMode, position: { x: e.clientX, y: e.clientY }, sourcePageId, cellRight });
         } else {
           const wsLink = anchor.getAttribute('data-workspace') || anchor.getAttribute('data-workspace-link');
           if (wsLink) {
-            onHyperlinkClick({ wsLink, pageName: anchor.textContent || '', mode: 'scroll', position: { x: e.clientX, y: e.clientY } });
+            onHyperlinkClick({ wsLink, pageName: anchor.textContent || '', mode: 'scroll', position: { x: e.clientX, y: e.clientY }, sourcePageId, cellRight });
           } else {
             const href = anchor.getAttribute('href') || '';
             if (href.startsWith('bridge://')) {
               const parts = href.replace('bridge://', '').split('/');
-              onHyperlinkClick({ pageId: parts[0], pageName: anchor.textContent || '', mode: parts[1] || 'popup', position: { x: e.clientX, y: e.clientY } });
+              onHyperlinkClick({ pageId: parts[0], pageName: anchor.textContent || '', mode: parts[1] || 'popup', position: { x: e.clientX, y: e.clientY }, sourcePageId, cellRight });
             } else if (href.startsWith('#') && href.length > 1) {
               // Hash link — scroll to matching named table
               const fragment = decodeURIComponent(href.slice(1)).replace(/_/g, ' ').trim();
-              onHyperlinkClick({ wsLink: fragment, pageName: anchor.textContent || '', mode: 'scroll', position: { x: e.clientX, y: e.clientY } });
+              onHyperlinkClick({ wsLink: fragment, pageName: anchor.textContent || '', mode: 'scroll', position: { x: e.clientX, y: e.clientY }, sourcePageId, cellRight });
             }
           }
         }

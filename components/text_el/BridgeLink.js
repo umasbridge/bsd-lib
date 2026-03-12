@@ -94,11 +94,18 @@ export const BridgeLink = Link.extend({
             const isBridgeLink = href.startsWith('bridge://') || pageId || wsLink || (href.startsWith('#') && href.length > 1);
             if (!isBridgeLink) return false;
 
+            // Gather source context: which page the link is on and the cell boundary
+            // Start from anchor's parent to avoid matching the anchor's own data-page-id (target)
+            const sourcePageEl = anchor.parentElement?.closest('[data-page-id]');
+            const sourcePageId = sourcePageEl ? sourcePageEl.getAttribute('data-page-id') : null;
+            const cell = anchor.closest('td');
+            const cellRight = cell ? cell.getBoundingClientRect().right : null;
+
             // newtab mode: open page in new browser tab via URL parameters
             if (pageId && linkMode === 'newtab') {
               event.preventDefault();
               const cb = clickRef?.current;
-              if (cb) cb({ pageId, mode: 'newtab', position: { x: event.clientX, y: event.clientY } });
+              if (cb) cb({ pageId, mode: 'newtab', position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
               return true;
             }
 
@@ -108,25 +115,25 @@ export const BridgeLink = Link.extend({
             event.preventDefault();
 
             if (pageId) {
-              cb({ pageId, pageName: anchor.textContent || '', mode: linkMode || 'popup', position: { x: event.clientX, y: event.clientY } });
+              cb({ pageId, pageName: anchor.textContent || '', mode: linkMode || 'popup', position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
               return true;
             }
 
             if (wsLink) {
-              cb({ wsLink, pageName: anchor.textContent || '', mode: 'scroll', position: { x: event.clientX, y: event.clientY } });
+              cb({ wsLink, pageName: anchor.textContent || '', mode: 'scroll', position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
               return true;
             }
 
             if (href.startsWith('bridge://')) {
               const parts = href.replace('bridge://', '').split('/');
               const mode = parts[1] || 'popup';
-              cb({ pageId: parts[0], pageName: anchor.textContent || '', mode, position: { x: event.clientX, y: event.clientY } });
+              cb({ pageId: parts[0], pageName: anchor.textContent || '', mode, position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
               return true;
             }
 
             if (href.startsWith('#') && href.length > 1) {
               const fragment = decodeURIComponent(href.slice(1)).replace(/_/g, ' ').trim();
-              cb({ wsLink: fragment, pageName: anchor.textContent || '', mode: 'scroll', position: { x: event.clientX, y: event.clientY } });
+              cb({ wsLink: fragment, pageName: anchor.textContent || '', mode: 'scroll', position: { x: event.clientX, y: event.clientY }, sourcePageId, cellRight });
               return true;
             }
 

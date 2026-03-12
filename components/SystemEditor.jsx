@@ -1013,7 +1013,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
 
   const [pages, setPages] = useState(initialPages);
   const pagesRef = useRef(initialPages);
-  const [splitStack, setSplitStack] = useState([]);
+  const [splitStack, setSplitStack] = useState([]); // [{ page, sourcePageId }]
   const [popup, setPopup] = useState(null);
   const [isEditMode, setIsEditMode] = useState(startInEditMode);
   const [hasUnsavedSubPageChanges, setHasUnsavedSubPageChanges] = useState(false);
@@ -1129,7 +1129,20 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     if (target.mode === 'popup') {
       setPopup({ position, page: targetPage });
     } else {
-      setSplitStack((prev) => [...prev, targetPage]);
+      // Split mode: sibling replacement — find source page, dismiss everything after it
+      setSplitStack((prev) => {
+        const sourcePageId = target.sourcePageId;
+        let sourceIndex = -1; // -1 = main page (before any splits)
+        if (sourcePageId) {
+          sourceIndex = prev.findIndex((sp) => sp.page.id === sourcePageId);
+          // If source not found in split stack and not main, append after last
+          if (sourceIndex === -1 && sourcePageId !== 'main') {
+            sourceIndex = prev.length - 1;
+          }
+        }
+        const kept = prev.slice(0, sourceIndex + 1);
+        return [...kept, { page: targetPage }];
+      });
     }
   }, [docId]);
 
@@ -1195,48 +1208,150 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     );
   }
 
+  // Build full page chain: [main, split0, split1, ...]
+  // Last 2 are visible side-by-side; everything before is breadcrumb tabs.
+  const pageChain = [{ page: mainPage, isMain: true }, ...splitStack.map(sp => ({ page: sp.page, isMain: false }))];
+  const visibleStartIndex = Math.max(0, pageChain.length - 2);
+  const breadcrumbPages = pageChain.slice(0, visibleStartIndex);
+  const visiblePages = pageChain.slice(visibleStartIndex);
+
   return (
     <EditorProvider value={editorCtx}>
       <div style={{
         height: '100vh',
         boxSizing: 'border-box',
         backgroundColor: '#f3f4f6',
-        padding: '32px',
         display: 'flex',
-        justifyContent: 'center',
-        gap: '24px',
+        flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        <Page
-          key={mainPage.id}
-          initialPage={mainPage}
-          narrowMode={splitStack.length > 1}
-          onSave={handleSave}
-          onExit={onExit}
-          mainPageId="main"
-          startInEditMode={readOnly ? false : startInEditMode}
-          readOnly={readOnly}
-          onEditModeChange={setIsEditMode}
-          externalDirty={hasUnsavedSubPageChanges}
-        />
+        {/* Breadcrumb tabs — shown when chain exceeds 2 pages */}
+        {breadcrumbPages.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '8px 32px',
+            backgroundColor: '#e5e7eb',
+            flexShrink: 0,
+            overflowX: 'auto',
+          }}>
+            {breadcrumbPages.map((entry, i) => (
+              <div key={entry.page.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <button
+                  onClick={() => {
+                    // Jump to this breadcrumb: slice splitStack so this page becomes visible
+                    // If it's the main page (i === 0 and isMain), keep only first split entry
+                    // Otherwise keep splitStack up to index that makes this page the second-to-last visible
+                    if (entry.isMain) {
+                      // Show main + first split (if any), drop everything after first split
+                      setSplitStack(prev => prev.slice(0, 1));
+                    } else {
+                      // This is splitStack[i - breadcrumbAdjust]. We want this page + its child visible.
+                      // entry is at pageChain index i, which is splitStack index (i - 1) if main is at 0.
+                      // We want splitStack trimmed so this entry is second-to-last in the chain.
+                      const splitIndex = i - (pageChain[0].isMain ? 1 : 0);
+                      setSplitStack(prev => prev.slice(0, splitIndex + 2));
+                    }
+                  }}
+                  style={{
+                    padding: '4px 12px',
+                    fontSize: '13px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '4px',
+                    background: 'white',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                >
+                  {entry.page.title || entry.page.id}
+                </button>
+                <span style={{ color: '#9ca3af', fontSize: '13px' }}>›</span>
+              </div>
+            ))}
+            {/* Current visible pages label */}
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
+              {visiblePages[0]?.page.title || visiblePages[0]?.page.id}
+            </span>
 
-        {splitStack.map((sp, i) => {
-          const isLast = i === splitStack.length - 1;
-          return (
-            <Page
-              key={sp.id}
-              initialPage={sp}
-              mode="split"
-              narrowMode={!isLast}
-              onSave={handleSave}
-              onClose={() => setSplitStack((prev) => prev.slice(0, i))}
-              onPageChange={handlePageChange}
-              mainPageId="main"
-              editMode={readOnly ? false : isEditMode}
-              readOnly={readOnly}
-            />
-          );
-        })}
+            {/* Edit / Exit controls when main page is a tab */}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexShrink: 0 }}>
+              {!readOnly && (
+                <button
+                  onClick={() => { setIsEditMode(prev => !prev); }}
+                  style={{
+                    padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
+                    borderRadius: '4px', background: isEditMode ? '#eff6ff' : 'white',
+                    color: isEditMode ? '#1d4ed8' : 'inherit', cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = isEditMode ? '#dbeafe' : '#f0f0f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = isEditMode ? '#eff6ff' : 'white'; }}
+                >
+                  {isEditMode ? 'View' : 'Edit'}
+                </button>
+              )}
+              {onExit && (
+                <button
+                  onClick={onExit}
+                  style={{
+                    padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
+                    borderRadius: '4px', background: 'white', cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                >
+                  Exit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Visible pages — always the last 2 in the chain, side by side */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '24px',
+          padding: '32px',
+          overflow: 'hidden',
+        }}>
+          {visiblePages.map((entry, i) => {
+            const isFirst = i === 0;
+            if (entry.isMain) {
+              return (
+                <Page
+                  key={entry.page.id}
+                  initialPage={entry.page}
+                  onSave={handleSave}
+                  onExit={onExit}
+                  mainPageId="main"
+                  startInEditMode={readOnly ? false : startInEditMode}
+                  readOnly={readOnly}
+                  onEditModeChange={setIsEditMode}
+                  externalDirty={hasUnsavedSubPageChanges}
+                />
+              );
+            }
+            // Split page — find its index in splitStack for onClose
+            const splitIndex = splitStack.findIndex(sp => sp.page.id === entry.page.id);
+            return (
+              <Page
+                key={entry.page.id}
+                initialPage={entry.page}
+                mode="split"
+                onSave={handleSave}
+                onClose={() => setSplitStack((prev) => prev.slice(0, splitIndex))}
+                onPageChange={handlePageChange}
+                mainPageId="main"
+                editMode={readOnly ? false : isEditMode}
+                readOnly={readOnly}
+              />
+            );
+          })}
+        </div>
 
         {popup && (
           <PopupView position={popup.position} zIndex={200}>

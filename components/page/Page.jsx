@@ -461,6 +461,7 @@ export function Page({
   return (
     <div
       ref={containerRef}
+      data-page-id={page.id}
       style={containerStyle}
       onClick={(e) => { if (e.target === e.currentTarget) setSelectedElementId(null); }}
     >
