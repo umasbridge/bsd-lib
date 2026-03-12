@@ -172,19 +172,22 @@ export function Page({
 
   const moveElement = useCallback((elementId, direction) => {
     const cur = pageRef.current;
-    const sorted = [...cur.elements].sort((a, b) => a.order - b.order);
+    const sorted = [...cur.elements].filter(el => !el.popupOnly).sort((a, b) => a.order - b.order);
+    const popupOnly = cur.elements.filter(el => el.popupOnly);
     const idx = sorted.findIndex(e => e.id === elementId);
     if (idx === -1) return;
     if (direction === 'up' && idx > 0) {
-      const tmp = sorted[idx].order;
-      sorted[idx] = { ...sorted[idx], order: sorted[idx - 1].order };
-      sorted[idx - 1] = { ...sorted[idx - 1], order: tmp };
+      const [el] = sorted.splice(idx, 1);
+      sorted.splice(idx - 1, 0, el);
     } else if (direction === 'down' && idx < sorted.length - 1) {
-      const tmp = sorted[idx].order;
-      sorted[idx] = { ...sorted[idx], order: sorted[idx + 1].order };
-      sorted[idx + 1] = { ...sorted[idx + 1], order: tmp };
+      const [el] = sorted.splice(idx, 1);
+      sorted.splice(idx + 1, 0, el);
+    } else {
+      return;
     }
-    const updatedPage = { ...cur, elements: sorted };
+    // Re-index with sequential orders to avoid duplicates
+    const reordered = sorted.map((el, i) => ({ ...el, order: i + 1 }));
+    const updatedPage = { ...cur, elements: [...reordered, ...popupOnly] };
     pageRef.current = updatedPage;
     setPage(updatedPage);
     notifyParent(updatedPage);

@@ -57,6 +57,7 @@ export function BidTableFormatPanel({
     <div
       data-element-format-panel=""
       className="flex items-center gap-0.5 py-1 px-2 bg-gray-50 border border-gray-200 rounded-t sticky top-0 z-20"
+      onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => { e.stopPropagation(); if (e.target.tagName !== 'INPUT') e.preventDefault(); }}
       onMouseUp={(e) => e.stopPropagation()}
