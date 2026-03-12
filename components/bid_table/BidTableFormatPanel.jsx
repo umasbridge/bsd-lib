@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Copy,
   Trash2,
@@ -40,6 +40,11 @@ export function BidTableFormatPanel({
   const [showBorderWidth, setShowBorderWidth] = useState(false);
   const [showGridColor, setShowGridColor] = useState(false);
   const [showGridWidth, setShowGridWidth] = useState(false);
+  const [rowHeightInput, setRowHeightInput] = useState(String(defaultRowHeight ?? 34));
+
+  useEffect(() => {
+    setRowHeightInput(String(defaultRowHeight ?? 34));
+  }, [defaultRowHeight]);
 
   const closeAll = () => {
     setShowBorderColor(false);
@@ -53,7 +58,7 @@ export function BidTableFormatPanel({
       data-element-format-panel=""
       className="flex items-center gap-0.5 py-1 px-2 bg-gray-50 border border-gray-200 rounded-t sticky top-0 z-20"
       onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+      onMouseDown={(e) => { e.stopPropagation(); if (e.target.tagName !== 'INPUT') e.preventDefault(); }}
       onMouseUp={(e) => e.stopPropagation()}
     >
       {/* Border Color */}
@@ -200,13 +205,32 @@ export function BidTableFormatPanel({
           <div className="flex items-center gap-1">
             <span className="text-[11px] text-gray-500 whitespace-nowrap">Row H</span>
             <input
-              type="number"
-              min={20}
-              max={60}
-              value={defaultRowHeight ?? 29}
+              type="text"
+              inputMode="numeric"
+              value={rowHeightInput}
+              onMouseDown={(e) => e.stopPropagation()}
               onChange={(e) => {
-                const val = Math.min(60, Math.max(20, Number(e.target.value)));
+                const raw = e.target.value.replace(/[^0-9]/g, '');
+                setRowHeightInput(raw);
+              }}
+              onBlur={() => {
+                const num = Number(rowHeightInput);
+                const val = num >= 20 && num <= 60 ? num : 34;
+                setRowHeightInput(String(val));
                 onDefaultRowHeightChange(val);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.target.blur();
+                } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  const cur = Number(rowHeightInput) || 34;
+                  const next = e.key === 'ArrowUp'
+                    ? Math.min(60, cur + 1)
+                    : Math.max(20, cur - 1);
+                  setRowHeightInput(String(next));
+                  onDefaultRowHeightChange(next);
+                }
               }}
               style={{ width: '38px', height: '22px', fontSize: '11px', padding: '0 2px', border: '1px solid #D1D5DB', borderRadius: '3px', textAlign: 'center' }}
             />

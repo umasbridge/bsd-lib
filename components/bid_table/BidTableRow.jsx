@@ -46,6 +46,7 @@ export function BidTableRow({
 
   const bidColumnWidth = getLevelWidth(level);
   const indentWidth = getIndentWidth(level);
+  const effectiveRowHeight = rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT;
 
   // Width calculation for non-bid columns.
   // Extra columns (index > 0): fixed absolute width from stored columnWidths.
@@ -381,12 +382,14 @@ export function BidTableRow({
           position: 'relative',
           width: '100%',
           height: '100%',
+          display: 'flex',
+          alignItems: 'center',
           backgroundColor: 'white',
         }}
       >
         {hasStyledDivs ? (
           <div
-            className="px-2 py-1 text-sm leading-relaxed outline-none"
+            className="px-2 py-1 text-sm leading-relaxed outline-none flex-1 min-w-0"
             contentEditable={!isViewMode}
             suppressContentEditableWarning
             dangerouslySetInnerHTML={{ __html: primaryCol.html }}
@@ -412,6 +415,7 @@ export function BidTableRow({
             }}
             placeholder={primaryColIndex === 0 ? "Meaning" : `Col ${primaryColIndex + 2}`}
             minHeight={rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT}
+
             readOnly={isViewMode}
             onFocus={() => onRowFocus?.(row.id)}
           />
@@ -472,6 +476,7 @@ export function BidTableRow({
       <div
         ref={rowRef}
         className="flex items-stretch relative"
+        style={{ minHeight: (rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT) + 'px' }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -555,7 +560,7 @@ export function BidTableRow({
                     title={row.collapsed ? "Expand" : "Collapse"}
                     data-collapse-triangle="true"
                     style={{
-                      bottom: '-6px',
+                      bottom: '-8px',
                       right: '-4px',
                       width: '12px',
                       height: '12px',

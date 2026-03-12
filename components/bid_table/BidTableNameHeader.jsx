@@ -35,7 +35,7 @@ export function BidTableNameHeader({
           : '1px solid #D1D5DB',
       }}
     >
-      <div className="px-2 py-1.5">
+      <div className="px-2" style={{ minHeight: (rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT) + 'px' }}>
         <TextEl
           mode="cell"
           value={name}

@@ -8,4 +8,4 @@
  * @typedef {{ enabled: boolean, color: string, width: number, style?: 'solid' | 'dashed' | 'dotted' }} GridlineOptions
  */
 
-export const DEFAULT_ROW_MIN_HEIGHT = 29;
+export const DEFAULT_ROW_MIN_HEIGHT = 34;

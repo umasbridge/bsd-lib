@@ -124,20 +124,32 @@ export function Page({
       ? Math.max(...cur.elements.map(e => e.order))
       : 0;
     const id = `el-${Date.now()}`;
-    const newEl = type === 'text'
-      ? {
-          id, type: 'text', order: maxOrder + 1,
-          content: '', htmlContent: '', width: 400,
-          borderColor: '#d1d5db', borderWidth: 2, fillColor: 'transparent',
-        }
-      : {
-          id, type: 'bidtable', order: maxOrder + 1,
-          rows: [{ id: '1', bid: '', columns: [{ value: '' }], children: [] }],
-          name: '', showName: true, width: 600,
-          columnWidths: [450], levelWidths: { 0: 80 },
-          gridlines: { enabled: true, color: '#D1D5DB', width: 1 },
-          borderColor: '#d1d5db', borderWidth: 1,
-        };
+    let newEl;
+    if (type === 'text') {
+      newEl = {
+        id, type: 'text', order: maxOrder + 1,
+        content: '', htmlContent: '', width: 400,
+        borderColor: '#d1d5db', borderWidth: 2, fillColor: 'transparent',
+      };
+    } else if (type === 'toc') {
+      newEl = {
+        id, type: 'bidtable', order: maxOrder + 1,
+        rows: [{ id: '1', bid: '', columns: [{ value: '' }], children: [] }],
+        name: 'Table of Contents', showName: true, tocTable: true,
+        width: 600, columnWidths: [450], levelWidths: { 0: 160 },
+        gridlines: { enabled: true, color: '#D1D5DB', width: 1 },
+        borderColor: '#d1d5db', borderWidth: 1,
+      };
+    } else {
+      newEl = {
+        id, type: 'bidtable', order: maxOrder + 1,
+        rows: [{ id: '1', bid: '', columns: [{ value: '' }], children: [] }],
+        name: '', showName: true, width: 600,
+        columnWidths: [450], levelWidths: { 0: 80 },
+        gridlines: { enabled: true, color: '#D1D5DB', width: 1 },
+        borderColor: '#d1d5db', borderWidth: 1,
+      };
+    }
     const updatedPage = { ...cur, elements: [...cur.elements, newEl] };
     pageRef.current = updatedPage;
     setPage(updatedPage);
@@ -556,6 +568,14 @@ export function Page({
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >
                       Text
+                    </button>
+                    <button
+                      onClick={() => addElement('toc')}
+                      style={{ display: 'block', width: '100%', padding: '8px 12px', fontSize: '14px', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      TOC
                     </button>
                   </div>
                 )}

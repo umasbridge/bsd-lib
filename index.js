@@ -1,5 +1,5 @@
 // BSD Library - Bridge System Document components
-export { SystemEditor } from './components/SystemEditor';
+export { SystemEditor, transformToPages } from './components/SystemEditor';
 export { parseSystemMd } from './lib/parseSystemMd';
 export { toSystemMd } from './lib/toSystemMd';
 

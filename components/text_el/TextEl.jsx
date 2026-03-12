@@ -138,7 +138,7 @@ export function TextEl({
   // Tiptap editor classes
   const modeClasses = {
     default: 'p-3 min-w-[100px]',
-    cell: 'px-2 py-1 text-sm',
+    cell: 'px-2 text-sm',
   };
 
   const editorClassName = `outline-none whitespace-pre-wrap break-words leading-relaxed ${modeClasses[mode] || ''} ${className}`.trim();
@@ -150,10 +150,19 @@ export function TextEl({
     dom.className = `tiptap ${editorClassName}`;
     dom.style.minHeight = effectiveMinHeight + 'px';
     dom.style.cursor = readOnly ? 'default' : 'text';
+    if (mode === 'cell') {
+      // Vertically center text within the cell.
+      dom.style.display = 'flex';
+      dom.style.flexDirection = 'column';
+      dom.style.justifyContent = 'center';
+      dom.style.paddingTop = '1px';
+      dom.style.paddingBottom = '1px';
+      dom.style.lineHeight = '1.3';
+    }
     if (placeholder) {
       dom.setAttribute('data-placeholder', placeholder);
     }
-  }, [editor, editorClassName, effectiveMinHeight, readOnly, placeholder]);
+  }, [editor, editorClassName, effectiveMinHeight, mode, readOnly, placeholder]);
 
   // Sync ruler display from the current paragraph's indent attributes
   useEffect(() => {
@@ -294,7 +303,7 @@ export function TextEl({
 
   // Cell mode: simpler rendering, no border/fill/resize, no Menu 3
   return (
-    <div className="relative">
+    <div className="relative flex-1 min-w-0">
       {/* Menu 2: Block Format Bar - via portal to avoid clipping in narrow cells */}
       {!readOnly && isFocused && !showHyperlinkMenu && !selection.hasSelection && createPortal(
         <div

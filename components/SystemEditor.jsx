@@ -235,7 +235,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
       const rows = (el.rows || []).map((row) => mapRow(row, pageLookup));
       applyRowMerges(rows, elFmt.rowMerges);
       applyRowHtml(rows, elFmt.rowHtml, pageLookup);
-      pageElements.push({
+      const bidtableEl = {
         id: `${sourcePage.id}-el-${i}`,
         type: 'bidtable',
         order: i + 1,
@@ -250,7 +250,9 @@ function buildPage(sourcePage, pageLookup, formatting) {
         borderWidth: elFmt.borderWidth ?? 1,
         startExpanded: false,
         rows,
-      });
+      };
+      if (elFmt.tocTable) bidtableEl.tocTable = true;
+      pageElements.push(bidtableEl);
     }
   }
 
@@ -292,7 +294,7 @@ function collectWorkspaceLinkTargets(pages) {
   return targets;
 }
 
-function transformToPages(system, formatting) {
+export function transformToPages(system, formatting) {
   _rowIdCounter = 0;
 
   const { systemName, description, rootElements = [], pages: sourcePages = [] } = system;
@@ -344,7 +346,7 @@ function transformToPages(system, formatting) {
       const rows = (el.rows || []).map((row) => mapRow(row, pageLookup));
       applyRowMerges(rows, elFmt.rowMerges);
       applyRowHtml(rows, elFmt.rowHtml, pageLookup);
-      mainElements.push({
+      const bidtableEl = {
         id: `main-el-${elIdx}`,
         type: 'bidtable',
         order: elIdx + 1,
@@ -359,8 +361,43 @@ function transformToPages(system, formatting) {
         borderWidth: elFmt.borderWidth ?? 1,
         startExpanded: false,
         rows,
-      });
+      };
+      if (elFmt.tocTable) bidtableEl.tocTable = true;
+      mainElements.push(bidtableEl);
     }
+  }
+
+  // If no root elements, auto-generate a TOC table linking to each page
+  if (mainElements.length === 0 && sourcePages.length > 0) {
+    // Only include top-level pages (from # headings) — find pages that are not
+    // subpages of other pages. Since the parser creates pages for both # and ###,
+    // we include all sourcePages in the TOC.
+    const tocFmt = mainFmt.elements?.[0] || {};
+    const tocRows = sourcePages.map((sp, i) => {
+      const pageId = `page-${sp.id}`;
+      return {
+        id: `toc-${i + 1}`,
+        bid: sp.name,
+        bidHtml: splitLink(sp.name, pageId),
+        columns: [{ value: '' }],
+        children: [],
+      };
+    });
+    mainElements.push({
+      id: 'main-toc',
+      type: 'bidtable',
+      order: 1,
+      name: 'Table of Contents',
+      nameHtml: '<span style="font-weight: 700">Table of Contents</span>',
+      showName: true,
+      width: tocFmt.width ?? 580,
+      columnWidths: tocFmt.columnWidths ?? [430],
+      levelWidths: tocFmt.levelWidths ?? { 0: 80 },
+      gridlines: tocFmt.gridlines ?? { enabled: true, color: '#D1D5DB', width: 1 },
+      borderColor: tocFmt.borderColor ?? '#d1d5db',
+      borderWidth: tocFmt.borderWidth ?? 1,
+      rows: tocRows,
+    });
   }
 
   const mainPage = {
@@ -772,6 +809,7 @@ function extractElementFormatting(el) {
     if (el.gridlines && JSON.stringify(el.gridlines) !== JSON.stringify({ enabled: true, color: '#D1D5DB', width: 1 })) fmt.gridlines = el.gridlines;
     if (el.borderColor && el.borderColor !== '#d1d5db') fmt.borderColor = el.borderColor;
     if (el.borderWidth !== undefined && el.borderWidth !== 1) fmt.borderWidth = el.borderWidth;
+    if (el.tocTable) fmt.tocTable = true;
 
     // Extract per-row merge info (mergedWithPrevious on columns)
     const merges = extractRowMerges(el.rows || []);
