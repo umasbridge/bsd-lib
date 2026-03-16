@@ -1212,18 +1212,17 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
 
             {/* Edit / Exit controls when main page is a tab */}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexShrink: 0 }}>
-              {!readOnly && (
+              {!readOnly && !isEditMode && (
                 <button
-                  onClick={() => { setIsEditMode(prev => !prev); }}
+                  onClick={() => { setIsEditMode(true); }}
                   style={{
                     padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
-                    borderRadius: '4px', background: isEditMode ? '#eff6ff' : 'white',
-                    color: isEditMode ? '#1d4ed8' : 'inherit', cursor: 'pointer', whiteSpace: 'nowrap',
+                    borderRadius: '4px', background: 'white', cursor: 'pointer', whiteSpace: 'nowrap',
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = isEditMode ? '#dbeafe' : '#f0f0f0'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = isEditMode ? '#eff6ff' : 'white'; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
                 >
-                  {isEditMode ? 'View' : 'Edit'}
+                  Edit
                 </button>
               )}
               {onExit && (
