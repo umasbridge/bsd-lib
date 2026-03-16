@@ -803,8 +803,8 @@ function extractElementFormatting(el) {
     if (el.borderWidth !== undefined && el.borderWidth !== 1) fmt.borderWidth = el.borderWidth;
     if (el.fillColor && el.fillColor !== 'transparent') fmt.fillColor = el.fillColor;
     if (el.margin) fmt.margin = el.margin;
-    // Preserve htmlContent if it contains styling (indents, etc.) that markdown can't express
-    if (el.htmlContent && /margin-left|margin-right/.test(el.htmlContent)) {
+    // Preserve htmlContent if it contains styling or marks that markdown can't express
+    if (el.htmlContent && (/margin-left|margin-right/.test(el.htmlContent) || /data-discussion-id/.test(el.htmlContent))) {
       fmt.htmlContent = el.htmlContent;
     }
     return Object.keys(fmt).length > 0 ? fmt : null;
@@ -964,7 +964,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -1130,7 +1130,12 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     availablePages,
     onHyperlinkClick: handleHyperlinkClick,
     onCreatePage: handleCreatePage,
-  }), [availablePages, handleHyperlinkClick, handleCreatePage]);
+    documentDiscussions: documentDiscussions || [],
+    onCreateDiscussion: onCreateDiscussion || null,
+    onAddToDiscussion: onAddToDiscussion || null,
+    onDiscussionHighlightClick: onDiscussionHighlightClick || null,
+    onAfterDiscussionApply: onAfterDiscussionApply || handleFullSave,
+  }), [availablePages, handleHyperlinkClick, handleCreatePage, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, handleFullSave]);
 
   const mainPage = (startPageId && pages.find((p) => p.id === startPageId)) || pages.find((p) => p.id === 'main');
 

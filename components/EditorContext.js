@@ -10,6 +10,11 @@ const EditorContext = createContext({
   availablePages: [],
   onHyperlinkClick: null,
   onCreatePage: null,
+  documentDiscussions: [],
+  onCreateDiscussion: null,
+  onAddToDiscussion: null,
+  onDiscussionHighlightClick: null,
+  onAfterDiscussionApply: null,
 });
 
 export const EditorProvider = EditorContext.Provider;

@@ -10,6 +10,7 @@ import { Superscript } from '@tiptap/extension-superscript';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { BridgeLink } from './BridgeLink';
+import { DiscussionHighlight } from './DiscussionHighlight';
 import { FontSize } from './FontSize';
 import { ListStyleType } from './ListStyleType';
 import { ParagraphIndent } from './ParagraphIndent';
@@ -27,7 +28,7 @@ import { useEditorContext } from '../EditorContext';
  */
 export function useTiptapEditor(options) {
   const { mode, initialHtml, onChange, onFocus, onBlur, readOnly } = options;
-  const { onHyperlinkClick, onCreatePage } = useEditorContext();
+  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
   // State matching useRichText's API
@@ -40,11 +41,14 @@ export function useTiptapEditor(options) {
   });
   const [showFormatPanel, setShowFormatPanel] = useState(false);
   const [showHyperlinkMenu, setShowHyperlinkMenu] = useState(false);
+  const [showDiscussionMenu, setShowDiscussionMenu] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   const panelInteractionRef = useRef(false);
   const onHyperlinkClickRef = useRef(onHyperlinkClick);
   onHyperlinkClickRef.current = onHyperlinkClick;
+  const onDiscussionHighlightClickRef = useRef(onDiscussionHighlightClick);
+  onDiscussionHighlightClickRef.current = onDiscussionHighlightClick;
 
   // Refs for callbacks passed to useEditor — avoids stale closures since
   // useEditor({...}, []) captures callbacks only once at creation time.
@@ -79,6 +83,9 @@ export function useTiptapEditor(options) {
       BridgeLink.configure({
         onBridgeLinkClick: onHyperlinkClickRef,
       }),
+      DiscussionHighlight.configure({
+        onDiscussionHighlightClick: onDiscussionHighlightClickRef,
+      }),
       FontSize,
       ListStyleType,
       ParagraphIndent,
@@ -106,7 +113,7 @@ export function useTiptapEditor(options) {
           panelInteractionRef.current = false;
           return;
         }
-        if (document.querySelector('[data-hyperlink-menu]')) {
+        if (document.querySelector('[data-hyperlink-menu]') || document.querySelector('[data-discussion-menu]')) {
           return;
         }
         setIsFocused(false);
@@ -158,10 +165,10 @@ export function useTiptapEditor(options) {
       currentHyperlinkHref: linkAttrs.href,
     });
 
-    if (hasSelection && !showHyperlinkMenu) {
+    if (hasSelection && !showHyperlinkMenu && !showDiscussionMenu) {
       setShowFormatPanel(true);
     }
-  }, [showHyperlinkMenu]);
+  }, [showHyperlinkMenu, showDiscussionMenu]);
 
   // Apply text formatting — matches the old applyFormat API
   const applyFormat = useCallback((format) => {
@@ -396,14 +403,45 @@ export function useTiptapEditor(options) {
     editor.chain().focus().unsetLink().run();
   }, [readOnly, features.allowHyperlinks, editor]);
 
+  // Apply discussion highlight to selected text (edit mode only — readOnly uses its own handler)
+  const applyDiscussionHighlight = useCallback(async (target) => {
+    if (!editor) return;
+
+    // Capture selection range BEFORE any async work (it may be lost during await)
+    const { from, to } = editor.state.selection;
+    const highlightText = target.selectedText || selection.selectedText;
+
+    let discussionId;
+    if (target.isNew) {
+      if (!onCreateDiscussion) return;
+      discussionId = await onCreateDiscussion(target.discussionName, highlightText);
+      if (!discussionId) return;
+    } else {
+      discussionId = target.discussionId;
+      if (onAddToDiscussion) onAddToDiscussion(discussionId);
+    }
+
+    // Restore selection (may have been lost during async), then apply mark
+    editor.chain().focus().setTextSelection({ from, to }).setMark('discussionHighlight', { 'data-discussion-id': discussionId }).run();
+    setShowDiscussionMenu(false);
+
+    // Auto-save so the highlight persists
+    if (onAfterDiscussionApply) onAfterDiscussionApply();
+  }, [editor, onCreateDiscussion, onAddToDiscussion, selection.selectedText, onAfterDiscussionApply]);
+
   const openFormatPanel = useCallback(() => setShowFormatPanel(true), []);
   const openHyperlinkMenu = useCallback(() => {
     setShowFormatPanel(false);
     setShowHyperlinkMenu(true);
   }, []);
+  const openDiscussionMenu = useCallback(() => {
+    setShowFormatPanel(false);
+    setShowDiscussionMenu(true);
+  }, []);
   const closePanels = useCallback(() => {
     setShowFormatPanel(false);
     setShowHyperlinkMenu(false);
+    setShowDiscussionMenu(false);
   }, []);
 
   // Global click handler to close panels when clicking outside
@@ -413,6 +451,7 @@ export function useTiptapEditor(options) {
       if (
         target.closest('[data-format-panel]') ||
         target.closest('[data-hyperlink-menu]') ||
+        target.closest('[data-discussion-menu]') ||
         target.closest('[data-block-format-bar]')
       ) {
         panelInteractionRef.current = true;
@@ -424,6 +463,7 @@ export function useTiptapEditor(options) {
       }
       setShowFormatPanel(false);
       setShowHyperlinkMenu(false);
+      setShowDiscussionMenu(false);
     };
 
     document.addEventListener('mousedown', handleGlobalMouseDown);
@@ -437,13 +477,16 @@ export function useTiptapEditor(options) {
     selection,
     showFormatPanel,
     showHyperlinkMenu,
+    showDiscussionMenu,
     isFocused,
     openFormatPanel,
     openHyperlinkMenu,
+    openDiscussionMenu,
     closePanels,
     applyFormat,
     applyHyperlink,
     removeHyperlink,
+    applyDiscussionHighlight,
     // handlers are no longer needed — Tiptap manages its own event listeners.
     // Keeping the shape for backward compat with any code that spreads handlers.
     handlers: {},

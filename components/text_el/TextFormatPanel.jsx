@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Subscript,
   Superscript,
+  MessageSquare,
 } from 'lucide-react';
 
 const FONT_SIZES = ['10px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px'];
@@ -34,6 +35,7 @@ export function TextFormatPanel({
   onOpenHyperlink,
   onRemoveHyperlink,
   isHyperlinkSelected,
+  onOpenDiscussion,
   position,
 }) {
   const [showFontSize, setShowFontSize] = useState(false);
@@ -252,6 +254,18 @@ export function TextFormatPanel({
             >
               <Link className="h-4 w-4" />
             </button>
+          )}
+          {onOpenDiscussion && (
+            <>
+              <div className="w-px h-6 bg-gray-200 mx-0.5" />
+              <button
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+                onClick={onOpenDiscussion}
+                title="Discussion"
+              >
+                <MessageSquare className="h-4 w-4" />
+              </button>
+            </>
           )}
         </>
       )}

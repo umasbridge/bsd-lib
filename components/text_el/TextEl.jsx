@@ -2,13 +2,16 @@ import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom';
 import { Resizable } from 're-resizable';
 import { EditorContent } from '@tiptap/react';
+import { MessageSquare } from 'lucide-react';
 import { useTiptapEditor } from './useTiptapEditor';
 import { BlockFormatBar } from './BlockFormatBar';
 import { TextFormatPanel } from './TextFormatPanel';
 import { HyperlinkMenu } from './HyperlinkMenu';
+import { DiscussionMenu } from './DiscussionMenu';
 import { ElementFormatPanel } from './ElementFormatPanel';
 import { Ruler } from './Ruler';
 import { getCurrentIndent } from './ParagraphIndent';
+import { useEditorContext } from '../EditorContext';
 import { LAYOUT } from './types';
 
 /**
@@ -52,6 +55,7 @@ export function TextEl({
   maxWidth,
   onWidthChange,
 }) {
+  const { onCreateDiscussion, onAfterDiscussionApply } = useEditorContext();
   const effectiveMinHeight = minHeight ?? (mode === 'cell' ? 20 : LAYOUT.MIN_ELEMENT_HEIGHT);
 
   const wrapperRef = useRef(null);
@@ -66,12 +70,15 @@ export function TextEl({
     selection,
     showFormatPanel,
     showHyperlinkMenu,
+    showDiscussionMenu,
     isFocused,
     openHyperlinkMenu,
+    openDiscussionMenu,
     closePanels,
     applyFormat,
     applyHyperlink,
     removeHyperlink,
+    applyDiscussionHighlight,
   } = useTiptapEditor({
     mode,
     initialHtml: htmlValue || value,
@@ -193,10 +200,97 @@ export function TextEl({
     editor.chain().focus().setIndentRight(value).run();
   }, [editor]);
 
+  // ReadOnly mode: detect native text selection for discussion button
+  const [readOnlySelection, setReadOnlySelection] = useState(null); // { text, position, pmRange }
+  const [readOnlyDiscussionMenu, setReadOnlyDiscussionMenu] = useState(false);
+
+  useEffect(() => {
+    if (!readOnly || !editor?.view?.dom) return;
+    const dom = editor.view.dom;
+
+    const handleMouseUp = () => {
+      // Small delay to let browser finalize selection
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !dom.contains(sel.anchorNode)) {
+          if (!readOnlyDiscussionMenu) setReadOnlySelection(null);
+          return;
+        }
+        const text = sel.toString().trim();
+        if (!text) {
+          if (!readOnlyDiscussionMenu) setReadOnlySelection(null);
+          return;
+        }
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        // Capture ProseMirror positions NOW while native selection exists
+        let pmRange = null;
+        try {
+          const { view } = editor;
+          const anchor = view.posAtDOM(sel.anchorNode, sel.anchorOffset);
+          const head = view.posAtDOM(sel.focusNode, sel.focusOffset);
+          pmRange = { from: Math.min(anchor, head), to: Math.max(anchor, head) };
+        } catch {
+          // posAtDOM can fail if selection is outside editor
+        }
+
+        setReadOnlySelection({
+          text,
+          position: { x: rect.left + rect.width / 2, y: rect.top, bottom: rect.bottom },
+          pmRange,
+        });
+      }, 10);
+    };
+
+    const handleMouseDown = (e) => {
+      if (e.target.closest('[data-discussion-menu]')) return;
+      if (readOnlyDiscussionMenu) {
+        setReadOnlyDiscussionMenu(false);
+        setReadOnlySelection(null);
+      }
+    };
+
+    dom.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      dom.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [readOnly, editor, readOnlyDiscussionMenu]);
+
+  const handleReadOnlyDiscussionApply = useCallback(async (target) => {
+    if (!editor || !readOnlySelection?.pmRange) return;
+
+    const { from, to } = readOnlySelection.pmRange;
+    const highlightText = readOnlySelection.text;
+
+    // Create discussion first (before toggling editable, to avoid triggering onChange)
+    let discussionId;
+    if (target.isNew) {
+      if (!onCreateDiscussion) return;
+      discussionId = await onCreateDiscussion(target.discussionName, highlightText);
+      if (!discussionId) return;
+    } else {
+      discussionId = target.discussionId;
+    }
+
+    // Temporarily enable editing, set selection, apply mark, restore
+    editor.setEditable(true);
+    editor.chain().setTextSelection({ from, to }).setMark('discussionHighlight', { 'data-discussion-id': discussionId }).run();
+    editor.setEditable(false);
+
+    setReadOnlyDiscussionMenu(false);
+    setReadOnlySelection(null);
+
+    // Auto-save so the highlight persists
+    if (onAfterDiscussionApply) onAfterDiscussionApply();
+  }, [editor, readOnlySelection, onCreateDiscussion, onAfterDiscussionApply]);
+
   // Menus are mutually exclusive. isSelected (border click) takes priority.
   const showMenu3 = isSelected && !readOnly;
-  const showMenu2 = !readOnly && isFocused && !showHyperlinkMenu && !isSelected && !selection.hasSelection;
-  const showMenu1 = !readOnly && showFormatPanel && !showHyperlinkMenu && selection.hasSelection && !isSelected;
+  const showMenu2 = !readOnly && isFocused && !showHyperlinkMenu && !showDiscussionMenu && !isSelected && !selection.hasSelection;
+  const showMenu1 = !readOnly && showFormatPanel && !showHyperlinkMenu && !showDiscussionMenu && selection.hasSelection && !isSelected;
 
   // Default mode: full wrapper with border, fill, resize
   if (mode === 'default') {
@@ -283,6 +377,7 @@ export function TextEl({
               onOpenHyperlink={openHyperlinkMenu}
               onRemoveHyperlink={removeHyperlink}
               isHyperlinkSelected={selection.isHyperlinkSelected}
+              onOpenDiscussion={openDiscussionMenu}
             />
           )}
 
@@ -294,6 +389,47 @@ export function TextEl({
               position={selection.position}
               onApply={applyHyperlink}
               onClose={closePanels}
+            />
+          )}
+
+          {/* Discussion Menu */}
+          {!readOnly && showDiscussionMenu && (
+            <DiscussionMenu
+              selectedText={selection.selectedText}
+              position={selection.position}
+              onApply={applyDiscussionHighlight}
+              onClose={closePanels}
+            />
+          )}
+
+          {/* ReadOnly: floating discussion button on text selection */}
+          {readOnly && readOnlySelection && !readOnlyDiscussionMenu && (
+            <div
+              data-discussion-menu=""
+              className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
+              style={{
+                left: readOnlySelection.position.x - 20,
+                top: readOnlySelection.position.y - 44,
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+                onClick={() => setReadOnlyDiscussionMenu(true)}
+                title="Discussion"
+              >
+                <MessageSquare className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {/* ReadOnly: discussion menu */}
+          {readOnly && readOnlyDiscussionMenu && readOnlySelection && (
+            <DiscussionMenu
+              selectedText={readOnlySelection.text}
+              position={readOnlySelection.position}
+              onApply={handleReadOnlyDiscussionApply}
+              onClose={() => { setReadOnlyDiscussionMenu(false); setReadOnlySelection(null); }}
             />
           )}
         </Resizable>
@@ -323,7 +459,7 @@ export function TextEl({
       <EditorContent editor={editor} />
 
       {/* Menu 1: Text Format Panel */}
-      {!readOnly && showFormatPanel && !showHyperlinkMenu && selection.hasSelection && (
+      {!readOnly && showFormatPanel && !showHyperlinkMenu && !showDiscussionMenu && selection.hasSelection && (
         <TextFormatPanel
           mode={mode}
           position={selection.position}
@@ -331,6 +467,7 @@ export function TextEl({
           onOpenHyperlink={openHyperlinkMenu}
           onRemoveHyperlink={removeHyperlink}
           isHyperlinkSelected={selection.isHyperlinkSelected}
+          onOpenDiscussion={openDiscussionMenu}
         />
       )}
 
@@ -342,6 +479,47 @@ export function TextEl({
           position={selection.position}
           onApply={applyHyperlink}
           onClose={closePanels}
+        />
+      )}
+
+      {/* Discussion Menu */}
+      {!readOnly && showDiscussionMenu && (
+        <DiscussionMenu
+          selectedText={selection.selectedText}
+          position={selection.position}
+          onApply={applyDiscussionHighlight}
+          onClose={closePanels}
+        />
+      )}
+
+      {/* ReadOnly: floating discussion button on text selection */}
+      {readOnly && readOnlySelection && !readOnlyDiscussionMenu && (
+        <div
+          data-discussion-menu=""
+          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
+          style={{
+            left: readOnlySelection.position.x - 20,
+            top: readOnlySelection.position.y - 44,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+            onClick={() => setReadOnlyDiscussionMenu(true)}
+            title="Discussion"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ReadOnly: discussion menu */}
+      {readOnly && readOnlyDiscussionMenu && readOnlySelection && (
+        <DiscussionMenu
+          selectedText={readOnlySelection.text}
+          position={readOnlySelection.position}
+          onApply={handleReadOnlyDiscussionApply}
+          onClose={() => { setReadOnlyDiscussionMenu(false); setReadOnlySelection(null); }}
         />
       )}
     </div>
