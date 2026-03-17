@@ -418,7 +418,7 @@ export function useTiptapEditor(options) {
       if (!discussionId) return;
     } else {
       discussionId = target.discussionId;
-      if (onAddToDiscussion) onAddToDiscussion(discussionId);
+      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText);
     }
 
     // Restore selection (may have been lost during async), then apply mark
