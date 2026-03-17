@@ -1009,6 +1009,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     // Reverse-transform to get updated md + formatting
     if (onSave && systemRef.current) {
       const { system, formatting } = reverseTransformPages(updated, systemRef.current);
+      // Preserve _highlights from previous formatting (not part of reverse transform)
+      if (formattingRef.current._highlights) formatting._highlights = formattingRef.current._highlights;
       const newMd = toSystemMd(system);
       systemRef.current = system;
       formattingRef.current = formatting;
@@ -1028,6 +1030,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const handleFullSave = useCallback(async () => {
     if (onSave && systemRef.current) {
       const { system, formatting } = reverseTransformPages(pagesRef.current, systemRef.current);
+      // Preserve _highlights from previous formatting (not part of reverse transform)
+      if (formattingRef.current._highlights) formatting._highlights = formattingRef.current._highlights;
       const newMd = toSystemMd(system);
       systemRef.current = system;
       formattingRef.current = formatting;
