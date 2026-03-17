@@ -39,7 +39,8 @@ export const DiscussionHighlight = Mark.create({
       'span',
       {
         ...HTMLAttributes,
-        style: 'background-color: #fef08a; cursor: pointer; border-radius: 2px;',
+        class: 'disc-hl',
+        style: 'background-color: #fef08a; cursor: pointer; border-radius: 2px; position: relative;',
       },
       0,
     ];
