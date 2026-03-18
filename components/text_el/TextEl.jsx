@@ -81,6 +81,7 @@ export function TextEl({
     applyDiscussionHighlight,
   } = useTiptapEditor({
     mode,
+    pageId,
     initialHtml: htmlValue || value,
     onChange,
     onFocus,
@@ -269,11 +270,11 @@ export function TextEl({
     let discussionId;
     if (target.isNew) {
       if (!onCreateDiscussion) return;
-      discussionId = await onCreateDiscussion(target.discussionName, highlightText);
+      discussionId = await onCreateDiscussion(target.discussionName, highlightText, pageId);
       if (!discussionId) return;
     } else {
       discussionId = target.discussionId;
-      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText);
+      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText, pageId);
     }
 
     // Temporarily enable editing, set selection, apply mark, restore
@@ -287,6 +288,11 @@ export function TextEl({
     // Auto-save so the highlight persists
     if (onAfterDiscussionApply) onAfterDiscussionApply();
   }, [editor, readOnlySelection, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply]);
+
+  // Wrap applyDiscussionHighlight to inject pageId
+  const applyDiscussionHighlightWithPage = useCallback((target) => {
+    return applyDiscussionHighlight({ ...target, pageId });
+  }, [applyDiscussionHighlight, pageId]);
 
   // Menus are mutually exclusive. isSelected (border click) takes priority.
   const showMenu3 = isSelected && !readOnly;
@@ -398,7 +404,7 @@ export function TextEl({
             <DiscussionMenu
               selectedText={selection.selectedText}
               position={selection.position}
-              onApply={applyDiscussionHighlight}
+              onApply={applyDiscussionHighlightWithPage}
               onClose={closePanels}
             />
           )}

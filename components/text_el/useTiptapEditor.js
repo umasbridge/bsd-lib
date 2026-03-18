@@ -27,7 +27,7 @@ import { useEditorContext } from '../EditorContext';
  *     applyFormat, applyHyperlink, removeHyperlink, handlers, editor }
  */
 export function useTiptapEditor(options) {
-  const { mode, initialHtml, onChange, onFocus, onBlur, readOnly } = options;
+  const { mode, initialHtml, onChange, onFocus, onBlur, readOnly, pageId } = options;
   const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply, documentHighlights } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
@@ -179,8 +179,10 @@ export function useTiptapEditor(options) {
         });
 
         const editorText = editor.state.doc.textContent;
-        for (const { discussionId, text } of documentHighlights) {
+        for (const { discussionId, text, pageId: hlPageId } of documentHighlights) {
           if (!activeIds.has(discussionId)) continue;
+          // Only apply highlights for this editor's page (or highlights without pageId for backward compat)
+          if (hlPageId && pageId && hlPageId !== pageId) continue;
           // Check if this text is in this editor and not already marked
           const idx = editorText.indexOf(text);
           if (idx === -1) continue;
@@ -511,11 +513,11 @@ export function useTiptapEditor(options) {
     let discussionId;
     if (target.isNew) {
       if (!onCreateDiscussion) return;
-      discussionId = await onCreateDiscussion(target.discussionName, highlightText);
+      discussionId = await onCreateDiscussion(target.discussionName, highlightText, target.pageId);
       if (!discussionId) return;
     } else {
       discussionId = target.discussionId;
-      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText);
+      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText, target.pageId);
     }
 
     // Restore selection (may have been lost during async), then apply mark
