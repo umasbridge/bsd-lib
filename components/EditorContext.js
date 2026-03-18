@@ -15,7 +15,6 @@ const EditorContext = createContext({
   onAddToDiscussion: null,
   onDiscussionHighlightClick: null,
   onAfterDiscussionApply: null,
-  documentHighlights: [],
 });
 
 export const EditorProvider = EditorContext.Provider;

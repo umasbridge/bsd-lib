@@ -35,6 +35,7 @@ export function BidTableRow({
   onUpdateColumnWidths,
   onAddColumn,
   onDeleteColumn,
+  rowIndexMap,
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState(null);
@@ -378,6 +379,8 @@ export function BidTableRow({
     const columnContent = (
       <div
         className="pr-1 py-1.5 pl-2"
+        data-row-index={rowIndexMap?.[row.id]}
+        data-col-index={primaryColIndex}
         style={{
           position: 'relative',
           width: '100%',
@@ -522,7 +525,7 @@ export function BidTableRow({
               boxShadow: isCellSelected ? 'inset 0 0 0 2px #3B82F6' : 'none',
             }}
           >
-            <div ref={bidCellRef} className="pl-1.5 pr-1 py-1.5 flex items-center relative" data-column-type="bid">
+            <div ref={bidCellRef} className="pl-1.5 pr-1 py-1.5 flex items-center relative" data-column-type="bid" data-row-index={rowIndexMap?.[row.id]} data-col-index={-1}>
               <div className="flex-1 relative">
                 {/* Bid cell: raw HTML for images (hand diagrams), TextEl otherwise */}
                 {row.bidHtml && row.bidHtml.includes('<img ') ? (
@@ -659,6 +662,7 @@ export function BidTableRow({
               onUpdateColumnWidths={onUpdateColumnWidths}
               onAddColumn={onAddColumn}
               onDeleteColumn={onDeleteColumn}
+              rowIndexMap={rowIndexMap}
             />
           ))}
         </div>

@@ -713,12 +713,24 @@ export function BidTable({
           />
         )}
 
-        {rows.map(row => (
+        {(() => {
+          // Build flat row index map (depth-first, matches extractRowHtml order)
+          let flatIdx = 0;
+          const rowIndexMap = {};
+          const buildIndexMap = (list) => {
+            for (const r of list) {
+              rowIndexMap[r.id] = flatIdx++;
+              if (r.children?.length > 0) buildIndexMap(r.children);
+            }
+          };
+          buildIndexMap(rows);
+          return rows.map(row => (
           <BidTableRow
             key={row.id}
             pageId={pageId}
             row={row}
             level={0}
+            rowIndexMap={rowIndexMap}
             getLevelWidth={getLevelWidth}
             getIndentWidth={getIndentWidth}
             onUpdateLevelWidth={updateLevelWidth}
@@ -746,7 +758,8 @@ export function BidTable({
             onAddColumn={addColumn}
             onDeleteColumn={deleteColumn}
           />
-        ))}
+        ));
+        })()}
       </div>
 
       {/* Undo Button */}
