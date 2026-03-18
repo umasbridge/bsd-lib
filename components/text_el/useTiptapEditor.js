@@ -470,6 +470,42 @@ export function useTiptapEditor(options) {
     return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
   }, [editor]);
 
+  // Listen for discussion deletions and remove marks
+  useEffect(() => {
+    if (!editor) return;
+    const handleDiscussionDeleted = (e) => {
+      const { discussionId } = e.detail;
+      if (!discussionId) return;
+      // Walk the entire document and remove discussionHighlight marks with this ID
+      const { doc } = editor.state;
+      const removals = [];
+      doc.descendants((node, pos) => {
+        node.marks.forEach(mark => {
+          if (mark.type.name === 'discussionHighlight' && mark.attrs['data-discussion-id'] === discussionId) {
+            removals.push({ from: pos, to: pos + node.nodeSize });
+          }
+        });
+      });
+      if (removals.length > 0) {
+        const markType = editor.schema.marks.discussionHighlight;
+        if (markType) {
+          const wasEditable = editor.isEditable;
+          if (!wasEditable) editor.setEditable(true);
+          let chain = editor.chain();
+          for (const { from, to } of removals) {
+            chain = chain.setTextSelection({ from, to }).unsetMark('discussionHighlight');
+          }
+          chain.run();
+          if (!wasEditable) editor.setEditable(false);
+          // Auto-save so the removal persists
+          if (onAfterDiscussionApply) onAfterDiscussionApply();
+        }
+      }
+    };
+    window.addEventListener('discussion-deleted', handleDiscussionDeleted);
+    return () => window.removeEventListener('discussion-deleted', handleDiscussionDeleted);
+  }, [editor]);
+
   return {
     editor,
     // Backward compat: contentEditableRef points to the Tiptap DOM element
