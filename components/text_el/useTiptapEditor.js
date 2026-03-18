@@ -132,6 +132,39 @@ export function useTiptapEditor(options) {
     }
   }, [editor, readOnly]);
 
+  // On load: remove stale discussion highlights (deleted while on mobile/offline)
+  useEffect(() => {
+    if (!editor || !documentDiscussions) return;
+    // Small delay to let editor content settle
+    const timer = setTimeout(() => {
+      const activeIds = new Set(documentDiscussions.map(d => d.id));
+      const { doc } = editor.state;
+      const removals = [];
+      doc.descendants((node, pos) => {
+        node.marks.forEach(mark => {
+          if (mark.type.name === 'discussionHighlight') {
+            const discId = mark.attrs['data-discussion-id'];
+            if (discId && !activeIds.has(discId)) {
+              removals.push({ from: pos, to: pos + node.nodeSize });
+            }
+          }
+        });
+      });
+      if (removals.length > 0) {
+        const wasEditable = editor.isEditable;
+        if (!wasEditable) editor.setEditable(true);
+        let chain = editor.chain();
+        for (const { from, to } of removals) {
+          chain = chain.setTextSelection({ from, to }).unsetMark('discussionHighlight');
+        }
+        chain.run();
+        if (!wasEditable) editor.setEditable(false);
+        if (onAfterDiscussionApply) onAfterDiscussionApply();
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [editor, documentDiscussions]);
+
   // Update selection state from Tiptap editor
   const updateSelectionFromEditor = useCallback((ed) => {
     if (!ed) return;
