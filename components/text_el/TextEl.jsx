@@ -55,7 +55,7 @@ export function TextEl({
   maxWidth,
   onWidthChange,
 }) {
-  const { onCreateDiscussion, onAfterDiscussionApply } = useEditorContext();
+  const { onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply } = useEditorContext();
   const effectiveMinHeight = minHeight ?? (mode === 'cell' ? 20 : LAYOUT.MIN_ELEMENT_HEIGHT);
 
   const wrapperRef = useRef(null);
@@ -273,6 +273,7 @@ export function TextEl({
       if (!discussionId) return;
     } else {
       discussionId = target.discussionId;
+      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText);
     }
 
     // Temporarily enable editing, set selection, apply mark, restore
@@ -285,7 +286,7 @@ export function TextEl({
 
     // Auto-save so the highlight persists
     if (onAfterDiscussionApply) onAfterDiscussionApply();
-  }, [editor, readOnlySelection, onCreateDiscussion, onAfterDiscussionApply]);
+  }, [editor, readOnlySelection, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply]);
 
   // Menus are mutually exclusive. isSelected (border click) takes priority.
   const showMenu3 = isSelected && !readOnly;
