@@ -28,7 +28,7 @@ import { useEditorContext } from '../EditorContext';
  */
 export function useTiptapEditor(options) {
   const { mode, initialHtml, onChange, onFocus, onBlur, readOnly } = options;
-  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply } = useEditorContext();
+  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply, documentHighlights } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
   // State matching useRichText's API
@@ -132,13 +132,17 @@ export function useTiptapEditor(options) {
     }
   }, [editor, readOnly]);
 
-  // On load: remove stale discussion highlights (deleted while on mobile/offline)
+  // On load: sync discussion highlights with current state
+  // 1. Remove marks for deleted discussions
+  // 2. Apply marks for highlights created on mobile
   useEffect(() => {
     if (!editor || !documentDiscussions) return;
-    // Small delay to let editor content settle
     const timer = setTimeout(() => {
       const activeIds = new Set(documentDiscussions.map(d => d.id));
       const { doc } = editor.state;
+      let changed = false;
+
+      // 1. Remove stale marks (discussion was deleted)
       const removals = [];
       doc.descendants((node, pos) => {
         node.marks.forEach(mark => {
@@ -159,11 +163,71 @@ export function useTiptapEditor(options) {
         }
         chain.run();
         if (!wasEditable) editor.setEditable(false);
-        if (onAfterDiscussionApply) onAfterDiscussionApply();
+        changed = true;
       }
+
+      // 2. Apply missing highlights (created on mobile via _highlights)
+      if (documentHighlights && documentHighlights.length > 0) {
+        // Collect existing highlight discussion IDs + text in this editor
+        const existingMarks = new Set();
+        editor.state.doc.descendants((node) => {
+          node.marks.forEach(mark => {
+            if (mark.type.name === 'discussionHighlight') {
+              existingMarks.add(mark.attrs['data-discussion-id'] + '::' + node.textContent);
+            }
+          });
+        });
+
+        const editorText = editor.state.doc.textContent;
+        for (const { discussionId, text } of documentHighlights) {
+          if (!activeIds.has(discussionId)) continue;
+          // Check if this text is in this editor and not already marked
+          const idx = editorText.indexOf(text);
+          if (idx === -1) continue;
+
+          // Map text offset to ProseMirror position
+          let charCount = 0;
+          let from = null, to = null;
+          editor.state.doc.descendants((node, pos) => {
+            if (from !== null) return false;
+            if (node.isText) {
+              const len = node.text.length;
+              if (from === null && charCount + len > idx) {
+                from = pos + (idx - charCount);
+              }
+              if (from !== null && charCount + len >= idx + text.length) {
+                to = pos + (idx + text.length - charCount);
+                return false;
+              }
+              charCount += len;
+            }
+          });
+
+          if (from !== null && to !== null) {
+            // Check if already marked
+            let alreadyMarked = false;
+            editor.state.doc.nodesBetween(from, to, (node) => {
+              node.marks.forEach(mark => {
+                if (mark.type.name === 'discussionHighlight' && mark.attrs['data-discussion-id'] === discussionId) {
+                  alreadyMarked = true;
+                }
+              });
+            });
+            if (alreadyMarked) continue;
+
+            const wasEditable = editor.isEditable;
+            if (!wasEditable) editor.setEditable(true);
+            editor.chain().setTextSelection({ from, to }).setMark('discussionHighlight', { 'data-discussion-id': discussionId }).run();
+            if (!wasEditable) editor.setEditable(false);
+            changed = true;
+          }
+        }
+      }
+
+      if (changed && onAfterDiscussionApply) onAfterDiscussionApply();
     }, 500);
     return () => clearTimeout(timer);
-  }, [editor, documentDiscussions]);
+  }, [editor, documentDiscussions, documentHighlights]);
 
   // Update selection state from Tiptap editor
   const updateSelectionFromEditor = useCallback((ed) => {

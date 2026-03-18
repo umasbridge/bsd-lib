@@ -1139,7 +1139,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     onAddToDiscussion: onAddToDiscussion || null,
     onDiscussionHighlightClick: onDiscussionHighlightClick || null,
     onAfterDiscussionApply: onAfterDiscussionApply || handleFullSave,
-  }), [availablePages, handleHyperlinkClick, handleCreatePage, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, handleFullSave]);
+    documentHighlights: initialFormatting?._highlights || [],
+  }), [availablePages, handleHyperlinkClick, handleCreatePage, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, handleFullSave, initialFormatting?._highlights]);
 
   const mainPage = (startPageId && pages.find((p) => p.id === startPageId)) || pages.find((p) => p.id === 'main');
 
