@@ -7,6 +7,7 @@ import {
   Square,
   Grid3X3,
 } from 'lucide-react';
+import { DEFAULT_ROW_MIN_HEIGHT } from './types';
 
 const BORDER_COLORS = [
   '#d1d5db', '#9ca3af', '#6b7280', '#374151', '#000000',
@@ -40,10 +41,10 @@ export function BidTableFormatPanel({
   const [showBorderWidth, setShowBorderWidth] = useState(false);
   const [showGridColor, setShowGridColor] = useState(false);
   const [showGridWidth, setShowGridWidth] = useState(false);
-  const [rowHeightInput, setRowHeightInput] = useState(String(defaultRowHeight ?? 34));
+  const [rowHeightInput, setRowHeightInput] = useState(String(defaultRowHeight ?? DEFAULT_ROW_MIN_HEIGHT));
 
   useEffect(() => {
-    setRowHeightInput(String(defaultRowHeight ?? 34));
+    setRowHeightInput(String(defaultRowHeight ?? DEFAULT_ROW_MIN_HEIGHT));
   }, [defaultRowHeight]);
 
   const closeAll = () => {
@@ -215,7 +216,7 @@ export function BidTableFormatPanel({
               }}
               onBlur={() => {
                 const num = Number(rowHeightInput);
-                const val = num >= 20 && num <= 60 ? num : 34;
+                const val = num >= 20 && num <= 60 ? num : DEFAULT_ROW_MIN_HEIGHT;
                 setRowHeightInput(String(val));
                 onDefaultRowHeightChange(val);
               }}
@@ -224,7 +225,7 @@ export function BidTableFormatPanel({
                   e.target.blur();
                 } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                   e.preventDefault();
-                  const cur = Number(rowHeightInput) || 34;
+                  const cur = Number(rowHeightInput) || DEFAULT_ROW_MIN_HEIGHT;
                   const next = e.key === 'ArrowUp'
                     ? Math.min(60, cur + 1)
                     : Math.max(20, cur - 1);

@@ -420,6 +420,7 @@ export function Page({
             startExpanded={element.startExpanded}
             defaultRowHeight={element.defaultRowHeight}
             onDefaultRowHeightChange={(h) => updateElement(element.id, { defaultRowHeight: h })}
+            tocTable={element.tocTable}
             onCopy={() => copyElement(element)}
             onDelete={() => deleteElement(element.id)}
             onMoveUp={!isFirst ? () => moveElement(element.id, 'up') : undefined}

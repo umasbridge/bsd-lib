@@ -28,7 +28,7 @@ import { useEditorContext } from '../EditorContext';
  */
 export function useTiptapEditor(options) {
   const { mode, initialHtml, onChange, onFocus, onBlur, readOnly, pageId } = options;
-  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply } = useEditorContext();
+  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply, onAddHighlightRef } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
   // State matching useRichText's API
@@ -97,10 +97,48 @@ export function useTiptapEditor(options) {
       attributes: {
         class: '',
         spellcheck: 'false',
+        style: 'font-size: 14px',
+      },
+      transformPastedHTML(html) {
+        // Strip font-size from pasted content so it inherits the 14px default
+        let cleaned = html.replace(/font-size:\s*[^;"']+;?/gi, '');
+        // Strip trailing empty paragraphs from pasted content
+        while (cleaned.endsWith('<p></p>') || cleaned.endsWith('<p><br></p>')) {
+          cleaned = cleaned.replace(/<p>(<br>)?<\/p>$/, '').trimEnd();
+        }
+        return cleaned;
+      },
+      handleKeyDown(view, event) {
+        // Allow deleting trailing empty paragraph with Backspace
+        if (event.key === 'Backspace') {
+          const { state } = view;
+          const { $from, empty: selEmpty } = state.selection;
+          // Check if cursor is in an empty paragraph at the end of the doc
+          if (selEmpty && $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0) {
+            const pos = $from.before();
+            const docSize = state.doc.content.size;
+            const isLast = pos + $from.parent.nodeSize >= docSize;
+            const isNotOnly = state.doc.childCount > 1;
+            if (isLast && isNotOnly) {
+              // Delete the trailing empty paragraph
+              const tr = state.tr.delete(pos, pos + $from.parent.nodeSize);
+              view.dispatch(tr);
+              return true;
+            }
+          }
+        }
+        return false;
       },
     },
     onUpdate({ editor: ed }) {
-      onChangeRef.current?.(ed.getText(), ed.getHTML());
+      // Strip trailing empty paragraphs so they don't add extra height
+      let html = ed.getHTML();
+      while (html.endsWith('<p></p>') || html.endsWith('<p><br></p>')) {
+        html = html.replace(/<p>(<br>)?<\/p>$/, '').trimEnd();
+      }
+      // Ensure at least one empty paragraph if everything was stripped
+      if (!html) html = '<p></p>';
+      onChangeRef.current?.(ed.getText(), html);
     },
     onFocus() {
       setIsFocused(true);
@@ -132,7 +170,7 @@ export function useTiptapEditor(options) {
     }
   }, [editor, readOnly]);
 
-  // On load: remove marks for deleted discussions
+  // On load: remove discussion highlight nodes for deleted discussions
   useEffect(() => {
     if (!editor || !documentDiscussions) return;
     const timer = setTimeout(() => {
@@ -141,23 +179,23 @@ export function useTiptapEditor(options) {
 
       const removals = [];
       doc.descendants((node, pos) => {
-        node.marks.forEach(mark => {
-          if (mark.type.name === 'discussionHighlight') {
-            const discId = mark.attrs['data-discussion-id'];
-            if (discId && !activeIds.has(discId)) {
-              removals.push({ from: pos, to: pos + node.nodeSize });
-            }
+        if (node.type.name === 'discussionHighlight') {
+          const discId = node.attrs['data-discussion-id'];
+          if (discId && !activeIds.has(discId)) {
+            removals.push({ pos, text: node.attrs.text || '', size: node.nodeSize });
           }
-        });
+        }
       });
       if (removals.length > 0) {
         const wasEditable = editor.isEditable;
         if (!wasEditable) editor.setEditable(true);
-        let chain = editor.chain();
-        for (const { from, to } of removals) {
-          chain = chain.setTextSelection({ from, to }).unsetMark('discussionHighlight');
+        let tr = editor.state.tr;
+        // Process in reverse to maintain positions
+        for (let i = removals.length - 1; i >= 0; i--) {
+          const { pos, text, size } = removals[i];
+          tr = tr.replaceWith(pos, pos + size, editor.state.schema.text(text));
         }
-        chain.run();
+        editor.view.dispatch(tr);
         if (!wasEditable) editor.setEditable(false);
         if (onAfterDiscussionApply) onAfterDiscussionApply();
       }
@@ -414,10 +452,13 @@ export function useTiptapEditor(options) {
 
     let pageId = target.pageId;
 
-    // Create new page if requested
+    // Create new page if requested (optionally with source elements from Conventions)
     if (target.isNewPage && onCreatePage) {
-      pageId = onCreatePage(target.pageName);
-      if (!pageId) return; // creation failed
+      pageId = onCreatePage(target.pageName, target.sourceElements || undefined);
+      if (!pageId) {
+        alert('A page with that name already exists. Use a different name.');
+        return;
+      }
     }
 
     const href = `bridge://${pageId}/${target.mode}`;
@@ -454,13 +495,16 @@ export function useTiptapEditor(options) {
       if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText, target.pageId);
     }
 
-    // Restore selection (may have been lost during async), then apply mark
-    editor.chain().focus().setTextSelection({ from, to }).setMark('discussionHighlight', { 'data-discussion-id': discussionId }).run();
+    // Restore selection (may have been lost during async), then insert discussion node
+    editor.chain().focus().setTextSelection({ from, to }).setDiscussionHighlight({ 'data-discussion-id': discussionId }).run();
     setShowDiscussionMenu(false);
+
+    // Update in-memory _highlights so save doesn't lose them
+    if (onAddHighlightRef) onAddHighlightRef({ discussionId, text: highlightText, pageId: target.pageId || null });
 
     // Auto-save so the highlight persists
     if (onAfterDiscussionApply) onAfterDiscussionApply();
-  }, [editor, onCreateDiscussion, onAddToDiscussion, selection.selectedText, onAfterDiscussionApply]);
+  }, [editor, onCreateDiscussion, onAddToDiscussion, selection.selectedText, onAfterDiscussionApply, onAddHighlightRef]);
 
   const openFormatPanel = useCallback(() => setShowFormatPanel(true), []);
   const openHyperlinkMenu = useCallback(() => {
@@ -509,34 +553,33 @@ export function useTiptapEditor(options) {
     const handleDiscussionDeleted = (e) => {
       const { discussionId } = e.detail;
       if (!discussionId) return;
-      // Walk the entire document and remove discussionHighlight marks with this ID
+      // Walk the entire document and remove discussionHighlight nodes with this ID
       const { doc } = editor.state;
       const removals = [];
       doc.descendants((node, pos) => {
-        node.marks.forEach(mark => {
-          if (mark.type.name === 'discussionHighlight' && mark.attrs['data-discussion-id'] === discussionId) {
-            removals.push({ from: pos, to: pos + node.nodeSize });
-          }
-        });
+        if (node.type.name === 'discussionHighlight' && node.attrs['data-discussion-id'] === discussionId) {
+          removals.push({ pos, text: node.attrs.text || '', size: node.nodeSize });
+        }
       });
       if (removals.length > 0) {
-        const markType = editor.schema.marks.discussionHighlight;
-        if (markType) {
-          const wasEditable = editor.isEditable;
-          if (!wasEditable) editor.setEditable(true);
-          let chain = editor.chain();
-          for (const { from, to } of removals) {
-            chain = chain.setTextSelection({ from, to }).unsetMark('discussionHighlight');
-          }
-          chain.run();
-          if (!wasEditable) editor.setEditable(false);
-          // Auto-save so the removal persists
-          if (onAfterDiscussionApply) onAfterDiscussionApply();
+        const wasEditable = editor.isEditable;
+        if (!wasEditable) editor.setEditable(true);
+        let tr = editor.state.tr;
+        for (let i = removals.length - 1; i >= 0; i--) {
+          const { pos, text, size } = removals[i];
+          tr = tr.replaceWith(pos, pos + size, editor.state.schema.text(text));
         }
+        editor.view.dispatch(tr);
+        if (!wasEditable) editor.setEditable(false);
+        if (onAfterDiscussionApply) onAfterDiscussionApply();
       }
     };
     window.addEventListener('discussion-deleted', handleDiscussionDeleted);
-    return () => window.removeEventListener('discussion-deleted', handleDiscussionDeleted);
+    window.addEventListener('discussion-unlinked', handleDiscussionDeleted);
+    return () => {
+      window.removeEventListener('discussion-deleted', handleDiscussionDeleted);
+      window.removeEventListener('discussion-unlinked', handleDiscussionDeleted);
+    };
   }, [editor]);
 
   return {

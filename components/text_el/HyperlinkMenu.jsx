@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, ChevronDown, Plus } from 'lucide-react';
+import { Search, ChevronDown, Plus, BookOpen } from 'lucide-react';
 import { useEditorContext } from '../EditorContext';
 
 /**
@@ -16,8 +16,9 @@ export function HyperlinkMenu({
   position,
   onApply,
   onClose,
+  fixedMode,
 }) {
-  const { availablePages } = useEditorContext();
+  const { availablePages, conventionsPages } = useEditorContext();
   // Filter out the current page (can't link to yourself)
   const linkablePages = availablePages.filter(p => p.id !== pageId);
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,12 +26,14 @@ export function HyperlinkMenu({
   const [selectedPageId, setSelectedPageId] = useState(
     linkablePages.length > 0 ? linkablePages[0].id : null
   );
-  const [selectedMode, setSelectedMode] = useState('popup');
+  const [selectedMode, setSelectedMode] = useState(fixedMode || 'popup');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [adjustedPosition, setAdjustedPosition] = useState({ x: position.x, y: position.y });
   const [creatingNewPage, setCreatingNewPage] = useState(false);
   const [newPageName, setNewPageName] = useState(selectedText || '');
   const [urlValue, setUrlValue] = useState('');
+  const [showConventions, setShowConventions] = useState(false);
+  const [selectedConvention, setSelectedConvention] = useState(null); // { name, elements }
   const menuRef = useRef(null);
   const searchInputRef = useRef(null);
   const newPageInputRef = useRef(null);
@@ -106,13 +109,14 @@ export function HyperlinkMenu({
       return;
     }
 
-    // Create new page mode
+    // Create new page mode (blank or from conventions)
     if (creatingNewPage) {
       if (!newPageName.trim()) return;
       onApply({
         pageName: newPageName.trim(),
         mode: selectedMode,
         isNewPage: true,
+        sourceElements: selectedConvention?.elements || undefined,
       });
       return;
     }
@@ -182,9 +186,14 @@ export function HyperlinkMenu({
               className="flex-1 h-8 px-2.5 text-[13px] border border-gray-300 rounded-md focus:outline-none focus:border-blue-400"
             />
           </div>
+          {selectedConvention && (
+            <div className="text-[11px] text-green-600 mb-2">
+              From convention: {selectedConvention.name}
+            </div>
+          )}
           <button
             className="text-[12px] text-blue-600 hover:text-blue-800 mb-4 cursor-pointer"
-            onClick={() => setCreatingNewPage(false)}
+            onClick={() => { setCreatingNewPage(false); setSelectedConvention(null); }}
           >
             ← Link to existing page
           </button>
@@ -260,31 +269,67 @@ export function HyperlinkMenu({
           )}
 
           {/* Create new page link */}
-          <button
-            className="flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-800 mb-4 cursor-pointer"
-            onClick={() => setCreatingNewPage(true)}
-          >
-            <Plus className="h-3 w-3" /> Create new page
-          </button>
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              className="flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-800 cursor-pointer"
+              onClick={() => { setCreatingNewPage(true); setSelectedConvention(null); setShowConventions(false); }}
+            >
+              <Plus className="h-3 w-3" /> Create new page
+            </button>
+            {conventionsPages && conventionsPages.length > 0 && (
+              <button
+                className="flex items-center gap-1 text-[12px] text-green-600 hover:text-green-800 cursor-pointer"
+                onClick={() => setShowConventions(!showConventions)}
+              >
+                <BookOpen className="h-3 w-3" /> Conventions
+              </button>
+            )}
+          </div>
+
+          {/* Conventions page picker */}
+          {showConventions && conventionsPages && (
+            <div className="border border-gray-200 rounded-md max-h-[160px] overflow-y-auto mb-4">
+              {conventionsPages.map((cp, i) => (
+                <button
+                  key={i}
+                  className={`w-full px-3 py-2 text-left text-[13px] border-b border-gray-100 last:border-b-0 ${
+                    selectedConvention?.name === cp.name
+                      ? 'bg-green-50 text-green-700'
+                      : 'hover:bg-gray-50'
+                  }`}
+                  onClick={() => {
+                    setSelectedConvention(cp);
+                    setCreatingNewPage(true);
+                    setShowConventions(false);
+                    setNewPageName(selectedText || cp.name);
+                  }}
+                >
+                  {cp.name}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
 
-      {/* Mode selection */}
-      <div className="flex items-center gap-2 mb-7 flex-wrap">
-        {['popup', 'split', 'newtab', 'url'].map((m) => (
-          <button
-            key={m}
-            className={`px-3 py-1.5 rounded text-xs cursor-pointer ${
-              selectedMode === m
-                ? 'bg-blue-600 text-white border border-blue-600'
-                : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-            }`}
-            onClick={() => setSelectedMode(m)}
-          >
-            {MODE_LABELS[m]}
-          </button>
-        ))}
-      </div>
+      {/* Mode selection — hidden for TOC bid column (fixedMode), simplified for others */}
+      {!fixedMode && (
+        <div className="flex items-center gap-2 mb-7 flex-wrap">
+          {['newtab', 'url'].map((m) => (
+            <button
+              key={m}
+              className={`px-3 py-1.5 rounded text-xs cursor-pointer ${
+                selectedMode === m
+                  ? 'bg-blue-600 text-white border border-blue-600'
+                  : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
+              }`}
+              onClick={() => setSelectedMode(prev => prev === m ? 'popup' : m)}
+            >
+              {MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex justify-end gap-2">

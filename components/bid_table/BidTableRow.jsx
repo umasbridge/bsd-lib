@@ -36,6 +36,7 @@ export function BidTableRow({
   onAddColumn,
   onDeleteColumn,
   rowIndexMap,
+  tocTable = false,
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState(null);
@@ -544,6 +545,7 @@ export function BidTableRow({
                     minHeight={rowMinHeight ?? DEFAULT_ROW_MIN_HEIGHT}
                     readOnly={isViewMode}
                     onFocus={() => onRowFocus?.(row.id)}
+                    linkMode={tocTable ? 'split' : 'popup'}
                   />
                 )}
 
@@ -663,6 +665,7 @@ export function BidTableRow({
               onAddColumn={onAddColumn}
               onDeleteColumn={onDeleteColumn}
               rowIndexMap={rowIndexMap}
+              tocTable={tocTable}
             />
           ))}
         </div>

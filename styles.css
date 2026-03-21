@@ -49,3 +49,17 @@
 [contenteditable] ol ol ol, [contenteditable="false"] ol ol ol {
   list-style-type: lower-roman;
 }
+
+/* Hide trailing empty paragraph after lists (Tiptap adds these automatically) */
+.tiptap > ul + p:last-child:empty,
+.tiptap > ol + p:last-child:empty,
+.tiptap > ul + p:last-child:has(br:only-child),
+.tiptap > ol + p:last-child:has(br:only-child) {
+  display: none;
+}
+
+/* Also collapse any trailing empty paragraph that is the last child */
+.tiptap > p:last-child:empty:not(:first-child),
+.tiptap > p:last-child:not(:first-child):has(br:only-child) {
+  display: none;
+}

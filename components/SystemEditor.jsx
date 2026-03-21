@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { Page } from './page';
 import { PopupView } from './page';
 import { EditorProvider } from './EditorContext';
@@ -11,6 +11,12 @@ import { replaceSuitAbbreviations, colorizeSuitSymbols, stripSuitColorSpans } fr
 let _rowIdCounter = 0;
 function uid() {
   return `r-${++_rowIdCounter}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** Strip inline font-size styles so text inherits the editor's 14px default. */
+function stripFontSize(html) {
+  if (!html) return html;
+  return html.replace(/font-size:\s*[^;"']+;?/gi, '');
 }
 
 // ─── Text helpers ───
@@ -106,20 +112,44 @@ function newtabLink(text, pageId) {
 /**
  * Build a lookup from page name (lowercase) → page id.
  */
+function reverseSuitSymbols(str) {
+  return str.replace(/♣/g, 'c').replace(/♦/g, 'd').replace(/♥/g, 'h').replace(/♠/g, 's');
+}
+
 function buildPageLookup(pages) {
   const map = {};
   for (const page of pages) {
     const pageId = `page-${page.id}`;
-    const nameLower = page.name.toLowerCase();
-    map[nameLower] = pageId;
+    // Case-sensitive exact match
+    map[page.name] = pageId;
     // Also map the suit-symbol-converted name so cross-references like
     // [Over 1m2♥|popup] match headings like "### Over 1m2h"
-    const converted = replaceSuitAbbreviations(nameLower);
-    if (converted !== nameLower) {
+    const converted = replaceSuitAbbreviations(page.name);
+    if (converted !== page.name) {
       map[converted] = pageId;
+    }
+    // Also map abbreviation form so [1h1s2c2d|popup] resolves to page "1♥1♠2♣2♦"
+    const abbreviated = reverseSuitSymbols(page.name);
+    if (abbreviated !== page.name) {
+      map[abbreviated] = pageId;
     }
   }
   return map;
+}
+
+/** Force all bid links in TOC table rows to split mode. */
+function forceTocBidSplitMode(rows) {
+  const walk = (list) => {
+    for (const row of list) {
+      if (row.bidHtml && row.bidHtml.includes('data-page-id')) {
+        row.bidHtml = row.bidHtml
+          .replace(/data-link-mode="[^"]*"/g, 'data-link-mode="split"')
+          .replace(/bridge:\/\/([^/]+)\/[^"]+/g, 'bridge://$1/split');
+      }
+      if (row.children?.length > 0) walk(row.children);
+    }
+  };
+  walk(rows);
 }
 
 /**
@@ -131,10 +161,12 @@ function injectCrossReferences(text, pageLookup) {
     const parts = inner.split('|');
     const name = parts[0].trim();
     const mode = parts[1]?.trim().toLowerCase() || 'split';
+    const explicitPageId = parts[2]?.trim() || '';
     // Strip suit color spans for lookup, but keep colorized version for display
     const cleanName = stripSuitColorSpans(name);
     const displayName = colorizeSuitSymbols(replaceSuitAbbreviations(cleanName));
-    const pageId = pageLookup[cleanName.toLowerCase()];
+    // Use explicit page ID if provided, otherwise look up by name
+    const pageId = explicitPageId || pageLookup[cleanName];
     if (pageId) {
       if (mode === 'popup') return popupLink(displayName, pageId);
       if (mode === 'newtab') return newtabLink(displayName, pageId);
@@ -239,8 +271,12 @@ function buildPage(sourcePage, pageLookup, formatting) {
       let htmlContent;
       if (elFmt.htmlContent) {
         // Apply suit conversion to stored HTML (may contain unconverted abbreviations)
-        htmlContent = stripSuitColorSpans(elFmt.htmlContent);
-        htmlContent = replaceSuitAbbreviations(htmlContent);
+        htmlContent = stripFontSize(stripSuitColorSpans(elFmt.htmlContent));
+        // Only apply replaceSuitAbbreviations if no rich HTML tags (links, discussion spans)
+        // that have attributes which would be corrupted (UUIDs, URLs)
+        if (!/data-(page-id|discussion-id)/.test(htmlContent)) {
+          htmlContent = replaceSuitAbbreviations(htmlContent);
+        }
         htmlContent = colorizeSuitSymbols(htmlContent);
       } else {
         htmlContent = markdownListsToHtml(boldToHtml(replaceSuitAbbreviations(el.content)));
@@ -289,7 +325,10 @@ function buildPage(sourcePage, pageLookup, formatting) {
         startExpanded: false,
         rows,
       };
-      if (elFmt.tocTable) bidtableEl.tocTable = true;
+      if (elFmt.tocTable) {
+        bidtableEl.tocTable = true;
+        forceTocBidSplitMode(rows);
+      }
       pageElements.push(bidtableEl);
     }
   }
@@ -297,9 +336,10 @@ function buildPage(sourcePage, pageLookup, formatting) {
   return {
     id: pageId,
     title: replaceSuitAbbreviations(sourcePage.name),
-    titleHtml: colorizeSuitSymbols(stripSuitColorSpans(
+    originalName: sourcePage.name,
+    titleHtml: colorizeSuitSymbols(stripFontSize(stripSuitColorSpans(
       pageFmt.titleHtml || `<span style="font-weight: 700">${replaceSuitAbbreviations(sourcePage.name)}</span>`
-    )),
+    ))),
     leftMargin: pageFmt.leftMargin ?? 20,
     rightMargin: pageFmt.rightMargin ?? 20,
     elementSpacing: pageFmt.elementSpacing ?? 30,
@@ -331,8 +371,12 @@ export function transformToPages(system, formatting) {
       let htmlContent;
       if (elFmt.htmlContent) {
         // Apply suit conversion to stored HTML (may contain unconverted abbreviations)
-        htmlContent = stripSuitColorSpans(elFmt.htmlContent);
-        htmlContent = replaceSuitAbbreviations(htmlContent);
+        htmlContent = stripFontSize(stripSuitColorSpans(elFmt.htmlContent));
+        // Only apply replaceSuitAbbreviations if no rich HTML tags (links, discussion spans)
+        // that have attributes which would be corrupted (UUIDs, URLs)
+        if (!/data-(page-id|discussion-id)/.test(htmlContent)) {
+          htmlContent = replaceSuitAbbreviations(htmlContent);
+        }
         htmlContent = colorizeSuitSymbols(htmlContent);
       } else {
         htmlContent = markdownListsToHtml(boldToHtml(replaceSuitAbbreviations(el.content)));
@@ -379,51 +423,88 @@ export function transformToPages(system, formatting) {
         startExpanded: false,
         rows,
       };
-      if (elFmt.tocTable) bidtableEl.tocTable = true;
+      if (elFmt.tocTable) {
+        bidtableEl.tocTable = true;
+        forceTocBidSplitMode(rows);
+      }
       mainElements.push(bidtableEl);
     }
   }
 
   // If no root elements, auto-generate a TOC table linking to each page
+  // BUT only if there's no saved formatting for the main page (first load only).
+  // Once saved, the TOC is treated like any other table — loaded from formatting.
   if (mainElements.length === 0 && sourcePages.length > 0) {
-    // Only include top-level pages (from # headings) — find pages that are not
-    // subpages of other pages. Since the parser creates pages for both # and ###,
-    // we include all sourcePages in the TOC.
     const tocFmt = mainFmt.elements?.[0] || {};
-    const tocRows = sourcePages.map((sp, i) => {
-      const pageId = `page-${sp.id}`;
-      return {
-        id: `toc-${i + 1}`,
-        bid: replaceSuitAbbreviations(sp.name),
-        bidHtml: splitLink(colorizeSuitSymbols(replaceSuitAbbreviations(sp.name)), pageId),
-        columns: [{ value: '' }],
-        children: [],
-      };
-    });
-    mainElements.push({
-      id: 'main-toc',
-      type: 'bidtable',
-      order: 1,
-      name: 'Table of Contents',
-      nameHtml: '<span style="font-weight: 700">Table of Contents</span>',
-      showName: true,
-      tocTable: true,
-      width: tocFmt.width ?? 580,
-      columnWidths: tocFmt.columnWidths ?? [430],
-      levelWidths: tocFmt.levelWidths ?? { 0: 80 },
-      gridlines: tocFmt.gridlines ?? { enabled: true, color: '#D1D5DB', width: 1 },
-      borderColor: tocFmt.borderColor ?? '#d1d5db',
-      borderWidth: tocFmt.borderWidth ?? 1,
-      rows: tocRows,
-    });
+    const hasSavedToc = tocFmt.tocTable || tocFmt.rowHtml;
+
+    if (hasSavedToc) {
+      // Saved TOC exists — build from sourcePages but apply stored rowHtml/formatting
+      const tocRows = sourcePages.map((sp, i) => {
+        const pageId = `page-${sp.id}`;
+        return {
+          id: `toc-${i + 1}`,
+          bid: replaceSuitAbbreviations(sp.name),
+          bidHtml: splitLink(colorizeSuitSymbols(replaceSuitAbbreviations(sp.name)), pageId),
+          columns: [{ value: '' }],
+          children: [],
+        };
+      });
+      applyRowHtml(tocRows, tocFmt.rowHtml, pageLookup);
+      forceTocBidSplitMode(tocRows);
+      mainElements.push({
+        id: 'main-toc',
+        type: 'bidtable',
+        order: 1,
+        name: 'Table of Contents',
+        nameHtml: '<span style="font-weight: 700">Table of Contents</span>',
+        showName: true,
+        tocTable: true,
+        width: tocFmt.width ?? 580,
+        columnWidths: tocFmt.columnWidths ?? [430],
+        levelWidths: tocFmt.levelWidths ?? { 0: 80 },
+        gridlines: tocFmt.gridlines ?? { enabled: true, color: '#D1D5DB', width: 1 },
+        borderColor: tocFmt.borderColor ?? '#d1d5db',
+        borderWidth: tocFmt.borderWidth ?? 1,
+        rows: tocRows,
+      });
+    } else {
+      // First load — auto-generate TOC
+      const tocRows = sourcePages.map((sp, i) => {
+        const pageId = `page-${sp.id}`;
+        return {
+          id: `toc-${i + 1}`,
+          bid: replaceSuitAbbreviations(sp.name),
+          bidHtml: splitLink(colorizeSuitSymbols(replaceSuitAbbreviations(sp.name)), pageId),
+          columns: [{ value: '' }],
+          children: [],
+        };
+      });
+      mainElements.push({
+        id: 'main-toc',
+        type: 'bidtable',
+        order: 1,
+        name: 'Table of Contents',
+        nameHtml: '<span style="font-weight: 700">Table of Contents</span>',
+        showName: true,
+        tocTable: true,
+        width: tocFmt.width ?? 580,
+        columnWidths: tocFmt.columnWidths ?? [430],
+        levelWidths: tocFmt.levelWidths ?? { 0: 80 },
+        gridlines: tocFmt.gridlines ?? { enabled: true, color: '#D1D5DB', width: 1 },
+        borderColor: tocFmt.borderColor ?? '#d1d5db',
+        borderWidth: tocFmt.borderWidth ?? 1,
+        rows: tocRows,
+      });
+    }
   }
 
   const mainPage = {
     id: 'main',
     title: systemName,
-    titleHtml: colorizeSuitSymbols(stripSuitColorSpans(
+    titleHtml: colorizeSuitSymbols(stripFontSize(stripSuitColorSpans(
       mainFmt.titleHtml || `<span style="font-weight: 700">${replaceSuitAbbreviations(systemName)}</span>`
-    )),
+    ))),
     leftMargin: mainFmt.leftMargin ?? 20,
     rightMargin: mainFmt.rightMargin ?? 20,
     elementSpacing: mainFmt.elementSpacing ?? 30,
@@ -454,13 +535,15 @@ function hyperlinksToRefs(html) {
   // Bridge links: data-link-mode attribute present
   // Use ([\s\S]*?) to match link text that may contain nested <span> tags (e.g. suit color spans)
   let result = html.replace(
-    /<a\s[^>]*data-link-mode="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
-    (_, mode, innerHtml) => {
+    /<a\s([^>]*data-link-mode="([^"]*)"[^>]*)>([\s\S]*?)<\/a>/g,
+    (_, attrs, mode, innerHtml) => {
       // Strip any nested HTML tags (suit color spans, etc.) to get plain text
       const text = innerHtml.replace(/<[^>]*>/g, '');
-      if (mode === 'popup') return `[${text}|popup]`;
-      if (mode === 'newtab') return `[${text}|newtab]`;
-      return `[${text}|split]`;
+      // Extract data-page-id to preserve the exact link target through round-trip
+      const pageIdMatch = attrs.match(/data-page-id="([^"]*)"/);
+      const pageId = pageIdMatch ? pageIdMatch[1] : '';
+      const suffix = pageId ? `|${mode}|${pageId}` : `|${mode}`;
+      return `[${text}${suffix}]`;
     }
   );
   // External URLs: href starting with http(s), no data-link-mode
@@ -716,12 +799,16 @@ function extractRowHtml(rows) {
  */
 function refreshLinkPageIds(html, pageLookup) {
   if (!html || !html.includes('data-page-id')) return html;
+  // Build reverse lookup: pageId → true (to check if a stored ID is still valid)
+  const validIds = new Set(Object.values(pageLookup));
   return html.replace(
-    /<a\s([^>]*data-page-id="[^"]*"[^>]*)>([\s\S]*?)<\/a>/g,
-    (match, attrs, innerHtml) => {
-      // Extract clean display text from inner HTML
+    /<a\s([^>]*data-page-id="([^"]*)"[^>]*)>([\s\S]*?)<\/a>/g,
+    (match, attrs, existingId, innerHtml) => {
+      // If the stored page ID is still valid, keep it — don't override with text-based lookup
+      if (existingId && validIds.has(existingId)) return match;
+      // Otherwise, try to resolve by display text
       const cleanText = stripSuitColorSpans(innerHtml).replace(/<[^>]+>/g, '').trim();
-      const newPageId = pageLookup[cleanText.toLowerCase()];
+      const newPageId = pageLookup[cleanText];
       if (!newPageId) return match;
       const modeMatch = attrs.match(/data-link-mode="([^"]*)"/);
       const mode = modeMatch ? modeMatch[1] : 'split';
@@ -742,14 +829,15 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
       const rf = rowHtml[idx];
       if (rf) {
         if (rf.bidHtml) {
-          let bh = rf.bidHtml;
+          let bh = stripFontSize(rf.bidHtml);
+          const bidHasRichHtml = /<img /.test(bh) || /data-(page-id|discussion-id)/.test(bh);
           if (bh.includes('<img ')) {
             // Hand diagram images: use as-is, no suit conversion (base64 would be corrupted)
             row.bidHtml = bh;
-          } else if (bh.includes('<a ')) {
-            // Refresh stale page IDs in links; skip replaceSuitAbbreviations
-            // to avoid corrupting link text (e.g. "Club" → "♣")
-            bh = refreshLinkPageIds(bh, pageLookup);
+          } else if (bidHasRichHtml) {
+            // Has tags with attributes (links, discussion spans, etc.) — skip replaceSuitAbbreviations
+            // to avoid corrupting attribute values (UUIDs, URLs)
+            if (bh.includes('<a ')) bh = refreshLinkPageIds(bh, pageLookup);
             row.bidHtml = colorizeSuitSymbols(stripSuitColorSpans(bh));
           } else {
             bh = stripSuitColorSpans(bh);
@@ -762,21 +850,31 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
         if (rf.columns && row.columns) {
           for (let i = 0; i < rf.columns.length && i < row.columns.length; i++) {
             if (rf.columns[i]?.html) {
-              let colHtml = rf.columns[i].html;
-              if (colHtml.includes('<a ')) {
-                colHtml = refreshLinkPageIds(colHtml, pageLookup);
+              let colHtml = stripFontSize(rf.columns[i].html);
+              const hasRichHtml = /data-(page-id|discussion-id)/.test(colHtml);
+              if (hasRichHtml) {
+                if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
+                colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
+              } else {
+                colHtml = stripSuitColorSpans(colHtml);
+                colHtml = replaceSuitAbbreviations(colHtml);
+                colHtml = colorizeSuitSymbols(colHtml);
               }
-              colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
               row.columns[i].html = colHtml;
             }
           }
         } else if (rf.html && row.columns?.[0]) {
           // Backward compat: single column html
-          let colHtml = rf.html;
-          if (colHtml.includes('<a ')) {
-            colHtml = refreshLinkPageIds(colHtml, pageLookup);
+          let colHtml = stripFontSize(rf.html);
+          const hasRichHtml = /data-(page-id|discussion-id)/.test(colHtml);
+          if (hasRichHtml) {
+            if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
+            colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
+          } else {
+            colHtml = stripSuitColorSpans(colHtml);
+            colHtml = replaceSuitAbbreviations(colHtml);
+            colHtml = colorizeSuitSymbols(colHtml);
           }
-          colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
           row.columns[0].html = colHtml;
         }
       }
@@ -878,9 +976,15 @@ function reverseTransformPages(pages, originalSystem) {
     const pageId = `page-${origPage.id}`;
     const pageData = pageMap[pageId];
 
+    // Use originalName (preserved from parse) to avoid suit-symbol corruption.
+    // Fall back to title only if the user actually renamed the page.
+    const displayTitle = pageData?.title || origPage.name;
+    const origName = pageData?.originalName || origPage.name;
+    // If title differs from the suit-converted original, the user renamed it
+    const pageName = (displayTitle !== replaceSuitAbbreviations(origName)) ? displayTitle : origName;
     const page = {
       id: origPage.id,
-      name: pageData?.title || origPage.name,
+      name: pageName,
       elements: [],
     };
 
@@ -903,7 +1007,7 @@ function reverseTransformPages(pages, originalSystem) {
     if (p.id === 'main' || existingIds.has(p.id)) continue;
     const page = {
       id: p.id.replace(/^page-/, ''),
-      name: p.title || p.id.replace(/^page-/, ''),
+      name: p.originalName || p.title || p.id.replace(/^page-/, ''),
       elements: [],
     };
     const elements = [...(p.elements || [])].sort(
@@ -920,7 +1024,7 @@ function reverseTransformPages(pages, originalSystem) {
   const seenNames = new Set();
   const deduped = [];
   for (const page of resultPages) {
-    const key = page.name.toLowerCase();
+    const key = page.name;
     if (seenNames.has(key)) continue;
     seenNames.add(key);
     deduped.push(page);
@@ -964,7 +1068,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, exitTriggerRef, conventionsPages }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -978,7 +1082,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const [pages, setPages] = useState(initialPages);
   const pagesRef = useRef(initialPages);
   const [splitStack, setSplitStack] = useState([]); // [{ page, sourcePageId }]
-  const [popup, setPopup] = useState(null);
+  const [popupStack, setPopupStack] = useState([]); // [{ position, page, sourcePageId }]
   const [isEditMode, setIsEditMode] = useState(startInEditMode);
   const [hasUnsavedSubPageChanges, setHasUnsavedSubPageChanges] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
@@ -1049,6 +1153,12 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     }
   }, [isEditMode, onExit]);
 
+  // Register exit trigger so App can invoke it on back-swipe
+  useEffect(() => {
+    if (exitTriggerRef) exitTriggerRef.current = handleExitClick;
+    return () => { if (exitTriggerRef) exitTriggerRef.current = null; };
+  }, [exitTriggerRef, handleExitClick]);
+
   const handleHyperlinkClick = useCallback((target) => {
     // newtab mode: open page in a new browser tab
     if (target.mode === 'newtab' && target.pageId) {
@@ -1065,9 +1175,21 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     const position = target.position || { x: 400, y: 300 };
 
     if (target.mode === 'popup') {
-      setPopup({ position, page: targetPage });
+      const sourceId = target.sourcePageId || 'main';
+      setPopupStack(prev => {
+        // Find if the source already has a popup in the stack — if so, close it and all descendants
+        const sourceIdx = prev.findIndex(p => p.sourcePageId === sourceId);
+        const kept = sourceIdx >= 0 ? prev.slice(0, sourceIdx) : [...prev];
+        // Also close any popup opened FROM a popup page that's being replaced
+        // (if source is itself a popup page, trim everything from that point)
+        const popupSourceIdx = kept.findIndex(p => p.page.id === sourceId);
+        const trimmed = popupSourceIdx >= 0 ? kept.slice(0, popupSourceIdx + 1) : kept;
+        return [...trimmed, { position, page: targetPage, sourcePageId: sourceId }];
+      });
     } else {
       // Split mode: sibling replacement — find source page, dismiss everything after it
+      // Close popups whose source is no longer in the visible chain
+      setPopupStack([]);
       setSplitStack((prev) => {
         const sourcePageId = target.sourcePageId;
         let sourceIndex = -1; // -1 = main page (before any splits)
@@ -1085,22 +1207,67 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   }, [docId]);
 
   // Create a new page (chapter) and return its page ID
-  const handleCreatePage = useCallback((pageName) => {
-    const slug = pageName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const handleCreatePage = useCallback((pageName, sourceElements) => {
+    // Convert suit abbreviations immediately so the page name is canonical from the start
+    const convertedName = replaceSuitAbbreviations(pageName);
+    // Slug uses ASCII form — reverse any suit symbols to letters first
+    const asciiName = reverseSuitSymbols(convertedName);
+    const slug = asciiName.replace(/[^a-zA-Z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const pageId = `page-${slug}`;
 
-    // Check if page already exists
-    if (pagesRef.current.some(p => p.id === pageId)) return pageId;
+    // Check if page already exists (exact match)
+    if (pagesRef.current.some(p => p.id === pageId)) return null;
+
+    // If sourceElements provided (from Conventions), transform them into page elements
+    let pageElements = [];
+    if (sourceElements && sourceElements.length > 0) {
+      const pageLookup = buildPageLookup(systemRef.current?.pages || []);
+      for (let i = 0; i < sourceElements.length; i++) {
+        const el = sourceElements[i];
+        if (el.type === 'table') {
+          const rows = (el.rows || []).map((row) => mapRow(row, pageLookup));
+          pageElements.push({
+            id: `${slug}-el-${i}`,
+            type: 'bidtable',
+            order: i + 1,
+            name: el.name || '',
+            nameHtml: `<span style="font-weight: 700">${el.name || ''}</span>`,
+            showName: !!el.name,
+            width: 620,
+            columnWidths: [480],
+            levelWidths: { 0: 80 },
+            gridlines: { enabled: true, color: '#D1D5DB', width: 1 },
+            borderColor: '#d1d5db',
+            borderWidth: 1,
+            rows,
+          });
+        } else if (el.type === 'note') {
+          const htmlContent = colorizeSuitSymbols(replaceSuitAbbreviations(el.content || ''));
+          pageElements.push({
+            id: `${slug}-el-${i}`,
+            type: 'text',
+            order: i + 1,
+            content: el.content || '',
+            htmlContent,
+            width: 580,
+            borderColor: '#d1d5db',
+            borderWidth: 1,
+            fillColor: 'transparent',
+          });
+        }
+      }
+    }
 
     // Create new page data object
     const newPage = {
       id: pageId,
-      title: pageName,
-      titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(pageName)}</span>`,
+      title: convertedName,
+      originalName: convertedName,
+      titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(convertedName)}</span>`,
       leftMargin: 20,
       rightMargin: 20,
       elementSpacing: 30,
-      elements: [],
+      elements: pageElements,
     };
 
     // Add to pages ref immediately (so link clicks can find it right away)
@@ -1111,7 +1278,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
       const chapterId = slug;
       systemRef.current.pages = [
         ...(systemRef.current.pages || []),
-        { id: chapterId, name: pageName, elements: [] },
+        { id: chapterId, name: convertedName, elements: sourceElements ? JSON.parse(JSON.stringify(sourceElements)) : [] },
       ];
     }
 
@@ -1130,6 +1297,11 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     [pages]
   );
 
+  const handleAddHighlightRef = useCallback((highlight) => {
+    if (!formattingRef.current._highlights) formattingRef.current._highlights = [];
+    formattingRef.current._highlights.push(highlight);
+  }, []);
+
   const editorCtx = useMemo(() => ({
     availablePages,
     onHyperlinkClick: handleHyperlinkClick,
@@ -1139,7 +1311,9 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     onAddToDiscussion: onAddToDiscussion || null,
     onDiscussionHighlightClick: onDiscussionHighlightClick || null,
     onAfterDiscussionApply: onAfterDiscussionApply || handleFullSave,
-  }), [availablePages, handleHyperlinkClick, handleCreatePage, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, handleFullSave]);
+    onAddHighlightRef: handleAddHighlightRef,
+    conventionsPages: conventionsPages || null,
+  }), [availablePages, handleHyperlinkClick, handleCreatePage, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, handleFullSave, handleAddHighlightRef, conventionsPages]);
 
   const mainPage = (startPageId && pages.find((p) => p.id === startPageId)) || pages.find((p) => p.id === 'main');
 
@@ -1209,14 +1383,14 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                   onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
                 >
-                  {entry.page.title || entry.page.id}
+                  {entry.isMain ? 'Main' : (entry.page.title || entry.page.id)}
                 </button>
                 <span style={{ color: '#9ca3af', fontSize: '13px' }}>›</span>
               </div>
             ))}
             {/* Current visible pages label */}
             <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
-              {visiblePages[0]?.page.title || visiblePages[0]?.page.id}
+              {visiblePages[0]?.isMain ? 'Main' : (visiblePages[0]?.page.title || visiblePages[0]?.page.id)}
             </span>
 
             {/* Edit / Exit controls when main page is a tab */}
@@ -1296,21 +1470,23 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
           })}
         </div>
 
-        {popup && (
-          <PopupView position={popup.position} zIndex={200}>
+        {popupStack.map((popup, idx) => (
+          <PopupView key={popup.page.id} position={popup.position} zIndex={200 + idx * 10}>
             <Page
-              key={popup.page.id}
               initialPage={popup.page}
               mode="popup"
               maxHeight="70vh"
-              onClose={() => setPopup(null)}
+              onClose={() => {
+                // Close this popup and all popups opened from it
+                setPopupStack(prev => prev.slice(0, idx));
+              }}
               onPageChange={handlePageChange}
               mainPageId="main"
               editMode={readOnly ? false : isEditMode}
               readOnly={readOnly}
             />
           </PopupView>
-        )}
+        ))}
 
         {/* Save/Discard dialog for tab-bar exit */}
         {showExitDialog && (

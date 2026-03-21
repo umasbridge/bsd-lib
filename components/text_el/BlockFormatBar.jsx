@@ -188,6 +188,7 @@ export function BlockFormatBar({ mode, onFormat }) {
           </button>
         </>
       )}
+
     </div>
   );
 }

@@ -86,6 +86,7 @@ export function BidTable({
   onStyleChange,
   onGridlinesChange,
   startExpanded = false,
+  tocTable = false,
 }) {
   // Width is controlled by parent (like TextEl). Default to 680 if not provided.
   const effectiveWidth = widthProp || 680;
@@ -757,6 +758,7 @@ export function BidTable({
             onUpdateColumnWidths={updateColumnWidths}
             onAddColumn={addColumn}
             onDeleteColumn={deleteColumn}
+            tocTable={tocTable}
           />
         ));
         })()}

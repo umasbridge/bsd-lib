@@ -15,6 +15,8 @@ const EditorContext = createContext({
   onAddToDiscussion: null,
   onDiscussionHighlightClick: null,
   onAfterDiscussionApply: null,
+  onAddHighlightRef: null, // (highlight) => void — updates formattingRef._highlights
+  conventionsPages: null, // [{ name, elements }] from Conventions doc
 });
 
 export const EditorProvider = EditorContext.Provider;

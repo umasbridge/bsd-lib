@@ -54,8 +54,9 @@ export function TextEl({
   width,
   maxWidth,
   onWidthChange,
+  linkMode,
 }) {
-  const { onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply } = useEditorContext();
+  const { onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, onAddHighlightRef } = useEditorContext();
   const effectiveMinHeight = minHeight ?? (mode === 'cell' ? 20 : LAYOUT.MIN_ELEMENT_HEIGHT);
 
   const wrapperRef = useRef(null);
@@ -99,13 +100,14 @@ export function TextEl({
     }
   }, [editor, htmlValue, isFocused]);
 
-  // Position floating block format bar for cell mode (avoid clipping in narrow cells)
+  // Position floating block format bar at top-left of cell (avoid clipping in narrow cells)
   useLayoutEffect(() => {
     if (mode !== 'cell' || !floatingBarRef.current || !editor?.view?.dom) return;
     const rect = editor.view.dom.getBoundingClientRect();
     floatingBarRef.current.style.left = rect.left + 'px';
     floatingBarRef.current.style.top = rect.top + 'px';
   });
+
 
   // Handle click on element border (default mode) - selects element for Menu 3
   const handleWrapperClick = (e) => {
@@ -174,7 +176,7 @@ export function TextEl({
 
   // Sync ruler display from the current paragraph's indent attributes
   useEffect(() => {
-    if (mode !== 'default' || !editor) return;
+    if ((mode !== 'default' && mode !== 'cell') || !editor) return;
     const updateRuler = () => {
       const indent = getCurrentIndent(editor);
       setRulerIndent(prev => {
@@ -277,22 +279,28 @@ export function TextEl({
       if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText, pageId);
     }
 
-    // Temporarily enable editing, set selection, apply mark, restore
+    // Temporarily enable editing, set selection, insert discussion node, restore
     editor.setEditable(true);
-    editor.chain().setTextSelection({ from, to }).setMark('discussionHighlight', { 'data-discussion-id': discussionId }).run();
+    editor.chain().setTextSelection({ from, to }).setDiscussionHighlight({ 'data-discussion-id': discussionId }).run();
     editor.setEditable(false);
 
     setReadOnlyDiscussionMenu(false);
     setReadOnlySelection(null);
 
+    // Update in-memory _highlights so save doesn't lose them
+    if (onAddHighlightRef) onAddHighlightRef({ discussionId, text: highlightText, pageId: pageId || null });
+
     // Auto-save so the highlight persists
     if (onAfterDiscussionApply) onAfterDiscussionApply();
-  }, [editor, readOnlySelection, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply]);
+  }, [editor, readOnlySelection, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, onAddHighlightRef, pageId]);
 
   // Wrap applyDiscussionHighlight to inject pageId
   const applyDiscussionHighlightWithPage = useCallback((target) => {
     return applyDiscussionHighlight({ ...target, pageId });
   }, [applyDiscussionHighlight, pageId]);
+
+  // Cell mode: block format bar
+  const [showBlockBar, setShowBlockBar] = useState(false);
 
   // Menus are mutually exclusive. isSelected (border click) takes priority.
   const showMenu3 = isSelected && !readOnly;
@@ -396,6 +404,7 @@ export function TextEl({
               position={selection.position}
               onApply={applyHyperlink}
               onClose={closePanels}
+              fixedMode={linkMode}
             />
           )}
 
@@ -444,22 +453,40 @@ export function TextEl({
     );
   }
 
-  // Cell mode: simpler rendering, no border/fill/resize, no Menu 3
+  // Cell mode rendering
   return (
     <div className="relative flex-1 min-w-0">
-      {/* Menu 2: Block Format Bar - via portal to avoid clipping in narrow cells */}
-      {!readOnly && isFocused && !showHyperlinkMenu && !selection.hasSelection && createPortal(
-        <div
-          ref={floatingBarRef}
-          style={{
-            position: 'fixed',
-            transform: 'translateY(-100%)',
-            zIndex: 50,
-          }}
-        >
-          <BlockFormatBar mode={mode} onFormat={applyFormat} />
-        </div>,
-        document.body
+      {/* Menu 2: Block Format Bar - hover zone in top-left corner */}
+      {!readOnly && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: '40px',
+              height: '14px',
+              zIndex: 10,
+            }}
+            onMouseEnter={() => setShowBlockBar(true)}
+            onMouseLeave={() => setShowBlockBar(false)}
+          />
+          {showBlockBar && !showHyperlinkMenu && !selection.hasSelection && createPortal(
+            <div
+              ref={floatingBarRef}
+              style={{
+                position: 'fixed',
+                transform: 'translateY(-100%)',
+                zIndex: 250,
+              }}
+              onMouseEnter={() => setShowBlockBar(true)}
+              onMouseLeave={() => setShowBlockBar(false)}
+            >
+              <BlockFormatBar mode={mode} onFormat={applyFormat} />
+            </div>,
+            document.body
+          )}
+        </>
       )}
 
       {/* Tiptap editor */}
@@ -486,6 +513,7 @@ export function TextEl({
           position={selection.position}
           onApply={applyHyperlink}
           onClose={closePanels}
+          fixedMode={linkMode}
         />
       )}
 

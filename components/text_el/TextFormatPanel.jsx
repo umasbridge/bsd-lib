@@ -208,27 +208,29 @@ export function TextFormatPanel({
           <span className="w-4 h-4 border border-gray-300 rounded bg-yellow-200" />
         </button>
         {showBgColor && (
-          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg p-2 z-10 grid grid-cols-4 gap-1">
-            {HIGHLIGHT_COLORS.map(color => (
-              <button
-                key={color}
-                className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform"
-                style={{ backgroundColor: color }}
-                onClick={() => {
-                  onFormat({ backgroundColor: color });
-                  setShowBgColor(false);
-                }}
-              />
-            ))}
+          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg p-2 z-10 w-max">
+            <div className="grid grid-cols-4 gap-1">
+              {HIGHLIGHT_COLORS.map(color => (
+                <button
+                  key={color}
+                  className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform"
+                  style={{ backgroundColor: color }}
+                  onClick={() => {
+                    onFormat({ backgroundColor: color });
+                    setShowBgColor(false);
+                  }}
+                />
+              ))}
+            </div>
             <button
-              className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform bg-white text-xs"
+              className="w-full mt-1 px-1 py-0.5 text-xs text-gray-600 hover:bg-gray-100 rounded flex items-center gap-1"
               onClick={() => {
                 onFormat({ backgroundColor: 'transparent' });
                 setShowBgColor(false);
               }}
-              title="Remove highlight"
             >
-              ✕
+              <span className="w-4 h-4 rounded border border-gray-300 bg-white flex items-center justify-center text-[10px] text-gray-400">✕</span>
+              No highlight
             </button>
           </div>
         )}
