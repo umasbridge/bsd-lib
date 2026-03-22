@@ -534,6 +534,28 @@ export function useTiptapEditor(options) {
     return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
   }, [editor]);
 
+  // DOM-level click listener for discussion highlights — needed because ProseMirror's
+  // handleClick doesn't fire when the editor is non-editable (view mode).
+  useEffect(() => {
+    const dom = editor?.view?.dom;
+    if (!dom) return;
+
+    const handleClick = (e) => {
+      const span = e.target.closest('span[data-discussion-id]');
+      if (!span) return;
+      const discussionId = span.getAttribute('data-discussion-id');
+      if (!discussionId) return;
+      const cb = onDiscussionHighlightClickRef.current;
+      if (!cb) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cb({ discussionId, position: { x: e.clientX, y: e.clientY } });
+    };
+
+    dom.addEventListener('click', handleClick);
+    return () => dom.removeEventListener('click', handleClick);
+  }, [editor]);
+
   // Listen for discussion-deleted / discussion-unlinked events to remove highlight nodes
   useEffect(() => {
     const handleRemove = (e) => {

@@ -272,7 +272,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
       if (elFmt.htmlContent) {
         // Apply suit conversion to stored HTML (may contain unconverted abbreviations)
         htmlContent = stripFontSize(stripSuitColorSpans(elFmt.htmlContent));
-        if (!/data-page-id/.test(htmlContent)) {
+        if (!/data-page-id|data-discussion-id/.test(htmlContent)) {
           htmlContent = replaceSuitAbbreviations(htmlContent);
         }
         htmlContent = colorizeSuitSymbols(htmlContent);
@@ -370,7 +370,7 @@ export function transformToPages(system, formatting) {
       if (elFmt.htmlContent) {
         // Apply suit conversion to stored HTML (may contain unconverted abbreviations)
         htmlContent = stripFontSize(stripSuitColorSpans(elFmt.htmlContent));
-        if (!/data-page-id/.test(htmlContent)) {
+        if (!/data-page-id|data-discussion-id/.test(htmlContent)) {
           htmlContent = replaceSuitAbbreviations(htmlContent);
         }
         htmlContent = colorizeSuitSymbols(htmlContent);
@@ -826,7 +826,7 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
       if (rf) {
         if (rf.bidHtml) {
           let bh = stripFontSize(rf.bidHtml);
-          const bidHasRichHtml = /<img /.test(bh) || /data-page-id/.test(bh);
+          const bidHasRichHtml = /<img /.test(bh) || /data-page-id|data-discussion-id/.test(bh);
           if (bh.includes('<img ')) {
             // Hand diagram images: use as-is, no suit conversion (base64 would be corrupted)
             row.bidHtml = bh;
@@ -847,7 +847,7 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
           for (let i = 0; i < rf.columns.length && i < row.columns.length; i++) {
             if (rf.columns[i]?.html) {
               let colHtml = stripFontSize(rf.columns[i].html);
-              const hasRichHtml = /data-page-id/.test(colHtml);
+              const hasRichHtml = /data-page-id|data-discussion-id/.test(colHtml);
               if (hasRichHtml) {
                 if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
                 colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
@@ -862,7 +862,7 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
         } else if (rf.html && row.columns?.[0]) {
           // Backward compat: single column html
           let colHtml = stripFontSize(rf.html);
-          const hasRichHtml = /data-page-id/.test(colHtml);
+          const hasRichHtml = /data-page-id|data-discussion-id/.test(colHtml);
           if (hasRichHtml) {
             if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
             colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
@@ -898,7 +898,7 @@ function extractElementFormatting(el) {
     if (el.fillColor && el.fillColor !== 'transparent') fmt.fillColor = el.fillColor;
     if (el.margin) fmt.margin = el.margin;
     // Preserve htmlContent if it contains styling or marks that markdown can't express
-    if (el.htmlContent && /margin-left|margin-right/.test(el.htmlContent)) {
+    if (el.htmlContent && /margin-left|margin-right|data-discussion-id/.test(el.htmlContent)) {
       fmt.htmlContent = el.htmlContent;
     }
     return Object.keys(fmt).length > 0 ? fmt : null;
@@ -1297,6 +1297,12 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     [pages]
   );
 
+  // Auto-save after discussion highlight is applied — saves current pages to Supabase
+  const handleAfterDiscussionApply = useCallback(async () => {
+    await handleFullSave();
+    onAfterDiscussionApply?.();
+  }, [handleFullSave, onAfterDiscussionApply]);
+
   const editorCtx = useMemo(() => ({
     availablePages,
     onHyperlinkClick: handleHyperlinkClick,
@@ -1306,8 +1312,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     onAddToDiscussion,
     onDiscussionHighlightClick,
     documentDiscussions,
-    onAfterDiscussionApply,
-  }), [availablePages, handleHyperlinkClick, handleCreatePage, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply]);
+    onAfterDiscussionApply: handleAfterDiscussionApply,
+  }), [availablePages, handleHyperlinkClick, handleCreatePage, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, handleAfterDiscussionApply]);
 
   const mainPage = (startPageId && pages.find((p) => p.id === startPageId)) || pages.find((p) => p.id === 'main');
 

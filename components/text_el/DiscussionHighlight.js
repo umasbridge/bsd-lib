@@ -116,21 +116,26 @@ export const DiscussionHighlight = Node.create({
         });
       },
       removeDiscussionHighlight: (discussionId) => ({ tr, state }) => {
-        const { doc } = state;
-        const positions = [];
+        const { doc, schema } = state;
+        const replacements = [];
         doc.descendants((node, pos) => {
           if (
             node.type.name === this.name &&
             node.attrs['data-discussion-id'] === discussionId
           ) {
-            positions.push({ from: pos, to: pos + node.nodeSize });
+            replacements.push({ from: pos, to: pos + node.nodeSize, text: node.attrs.text || '' });
           }
         });
-        // Delete in reverse order so positions remain valid
-        for (let i = positions.length - 1; i >= 0; i--) {
-          tr.delete(positions[i].from, positions[i].to);
+        // Replace in reverse order so positions remain valid
+        for (let i = replacements.length - 1; i >= 0; i--) {
+          const { from, to, text } = replacements[i];
+          if (text) {
+            tr.replaceWith(from, to, schema.text(text));
+          } else {
+            tr.delete(from, to);
+          }
         }
-        return positions.length > 0;
+        return replacements.length > 0;
       },
     };
   },
