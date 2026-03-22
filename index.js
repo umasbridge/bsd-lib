@@ -10,3 +10,5 @@ export { TitleBar } from './components/page';
 
 export { BidTable } from './components/bid_table';
 export { TextEl } from './components/text_el';
+
+export { replaceSuitAbbreviations } from './lib/suitSymbols';

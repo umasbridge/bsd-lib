@@ -63,3 +63,19 @@
 .tiptap > p:last-child:not(:first-child):has(br:only-child) {
   display: none;
 }
+
+/* Discussion highlight — yellow background + 💬 emoji */
+.disc-hl {
+  background-color: #fef08a;
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.disc-hl::after {
+  content: '💬';
+  font-size: 0.75em;
+  margin-left: 1px;
+  vertical-align: super;
+}

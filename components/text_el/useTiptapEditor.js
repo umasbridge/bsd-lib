@@ -28,7 +28,7 @@ import { useEditorContext } from '../EditorContext';
  */
 export function useTiptapEditor(options) {
   const { mode, initialHtml, onChange, onFocus, onBlur, readOnly, pageId } = options;
-  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, documentDiscussions, onDiscussionHighlightClick, onAfterDiscussionApply, onAddHighlightRef } = useEditorContext();
+  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
   // State matching useRichText's API
@@ -170,39 +170,6 @@ export function useTiptapEditor(options) {
     }
   }, [editor, readOnly]);
 
-  // On load: remove discussion highlight nodes for deleted discussions
-  useEffect(() => {
-    if (!editor || !documentDiscussions) return;
-    const timer = setTimeout(() => {
-      const activeIds = new Set(documentDiscussions.map(d => d.id));
-      const { doc } = editor.state;
-
-      const removals = [];
-      doc.descendants((node, pos) => {
-        if (node.type.name === 'discussionHighlight') {
-          const discId = node.attrs['data-discussion-id'];
-          if (discId && !activeIds.has(discId)) {
-            removals.push({ pos, text: node.attrs.text || '', size: node.nodeSize });
-          }
-        }
-      });
-      if (removals.length > 0) {
-        const wasEditable = editor.isEditable;
-        if (!wasEditable) editor.setEditable(true);
-        let tr = editor.state.tr;
-        // Process in reverse to maintain positions
-        for (let i = removals.length - 1; i >= 0; i--) {
-          const { pos, text, size } = removals[i];
-          tr = tr.replaceWith(pos, pos + size, editor.state.schema.text(text));
-        }
-        editor.view.dispatch(tr);
-        if (!wasEditable) editor.setEditable(false);
-        if (onAfterDiscussionApply) onAfterDiscussionApply();
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [editor, documentDiscussions]);
-
   // Update selection state from Tiptap editor
   const updateSelectionFromEditor = useCallback((ed) => {
     if (!ed) return;
@@ -253,8 +220,6 @@ export function useTiptapEditor(options) {
 
     // List types — handle switching between list types
     if (format.listType !== undefined && features.allowBullets) {
-      // Check if we're in a nested list — if so, change only the innermost list type
-      // using setNodeMarkup instead of toggle (which affects the whole hierarchy)
       const { $from } = editor.state.selection;
       let listDepths = [];
       for (let d = $from.depth; d > 0; d--) {
@@ -270,9 +235,8 @@ export function useTiptapEditor(options) {
       const targetType = format.listType === 'bullet' ? 'bulletList'
         : format.listType === 'number' ? 'orderedList' : null;
 
-      // Nested list: change just the innermost list node type, or no-op if already correct
       if (isNested && targetType && innermostType) {
-        if (innermostType === targetType) return; // already the right type
+        if (innermostType === targetType) return;
       }
       if (isNested && targetType && innermostType && innermostType !== targetType) {
         const pos = $from.before(innermostDepth);
@@ -284,7 +248,6 @@ export function useTiptapEditor(options) {
         return;
       }
 
-      // Top-level list or not in a list — use toggle approach
       if (format.listType === 'bullet') {
         if (editor.isActive('bulletList')) {
           editor.chain().focus().toggleBulletList().run();
@@ -330,9 +293,7 @@ export function useTiptapEditor(options) {
     // Sub-list: indent current item and switch to opposite list type
     if (format.subList) {
       if (editor.isActive('orderedList') || editor.isActive('bulletList')) {
-        // Indent first
         editor.chain().focus().sinkListItem('listItem').run();
-        // Now switch the innermost list to the opposite type
         const { $from } = editor.state.selection;
         for (let d = $from.depth; d > 0; d--) {
           const node = $from.node(d);
@@ -348,7 +309,6 @@ export function useTiptapEditor(options) {
           }
         }
       } else {
-        // Not in a list → create a bullet list
         editor.chain().focus().toggleBulletList().run();
       }
       return;
@@ -366,7 +326,6 @@ export function useTiptapEditor(options) {
         editor.chain().focus().sinkListItem('listItem').run()
           || editor.chain().focus().sinkListItem('taskItem').run();
       } else if (format.indent === 'decrease') {
-        // Smart lift: adopt parent list type when dedenting
         const inBullet = editor.isActive('bulletList');
         const inOrdered = editor.isActive('orderedList');
         if (inBullet || inOrdered) {
@@ -382,7 +341,6 @@ export function useTiptapEditor(options) {
             }
           }
           editor.chain().focus().liftListItem('listItem').run();
-          // Check state AFTER lifting
           const nowInBullet = editor.isActive('bulletList');
           const nowInOrdered = editor.isActive('orderedList');
           if (parentListType === 'orderedList' && !nowInOrdered) {
@@ -425,7 +383,6 @@ export function useTiptapEditor(options) {
     }
     else if (format.fontSize) chain.setFontSize(format.fontSize).run();
     else if (format.fontFamily) {
-      // fontFamily could be added as another TextStyle attribute if needed
       chain.run();
     }
     else {
@@ -477,42 +434,72 @@ export function useTiptapEditor(options) {
     editor.chain().focus().unsetLink().run();
   }, [readOnly, features.allowHyperlinks, editor]);
 
-  // Apply discussion highlight to selected text (edit mode only — readOnly uses its own handler)
+  // Apply discussion highlight — replaces selected text with an atomic highlight node
+  // Works in both edit and view mode (temporarily enables editing if needed)
   const applyDiscussionHighlight = useCallback(async (target) => {
     if (!editor) return;
 
-    // Capture selection range BEFORE any async work (it may be lost during await)
-    const { from, to } = editor.state.selection;
-    const highlightText = target.selectedText || selection.selectedText;
-
     let discussionId;
-    if (target.isNew) {
+
+    if (target.action === 'create') {
       if (!onCreateDiscussion) return;
-      discussionId = await onCreateDiscussion(target.discussionName, highlightText, target.pageId);
-      if (!discussionId) return;
-    } else {
-      discussionId = target.discussionId;
-      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText, target.pageId);
+      discussionId = await onCreateDiscussion(target.name, target.highlightedText, pageId);
+    } else if (target.action === 'add') {
+      if (!onAddToDiscussion) return;
+      discussionId = await onAddToDiscussion(target.discussionId, target.highlightedText, pageId);
+      if (!discussionId) discussionId = target.discussionId;
     }
 
-    // Restore selection (may have been lost during async), then insert discussion node
-    editor.chain().focus().setTextSelection({ from, to }).setDiscussionHighlight({ 'data-discussion-id': discussionId }).run();
+    if (!discussionId) return;
+
+    // Temporarily enable editing if in read-only mode
+    const wasReadOnly = !editor.isEditable;
+    if (wasReadOnly) editor.setEditable(true);
+
+    // In view mode, Tiptap doesn't track the native selection.
+    // Resolve DOM selection to ProseMirror positions before replacing.
+    const domSel = window.getSelection();
+    if (domSel && domSel.rangeCount > 0 && !domSel.isCollapsed) {
+      try {
+        const range = domSel.getRangeAt(0);
+        const from = editor.view.posAtDOM(range.startContainer, range.startOffset);
+        const to = editor.view.posAtDOM(range.endContainer, range.endOffset);
+        if (from != null && to != null && from !== to) {
+          editor.chain().focus().setTextSelection({ from, to }).deleteSelection().insertDiscussionHighlight({
+            'data-discussion-id': discussionId,
+            text: target.highlightedText,
+          }).run();
+        }
+      } catch {
+        // Fallback: try with current Tiptap selection
+        editor.chain().focus().deleteSelection().insertDiscussionHighlight({
+          'data-discussion-id': discussionId,
+          text: target.highlightedText,
+        }).run();
+      }
+    } else {
+      // Edit mode: Tiptap selection is already correct
+      editor.chain().focus().deleteSelection().insertDiscussionHighlight({
+        'data-discussion-id': discussionId,
+        text: target.highlightedText,
+      }).run();
+    }
+
+    if (wasReadOnly) editor.setEditable(false);
+
     setShowDiscussionMenu(false);
-
-    // Update in-memory _highlights so save doesn't lose them
-    if (onAddHighlightRef) onAddHighlightRef({ discussionId, text: highlightText, pageId: target.pageId || null });
-
-    // Auto-save so the highlight persists
-    if (onAfterDiscussionApply) onAfterDiscussionApply();
-  }, [editor, onCreateDiscussion, onAddToDiscussion, selection.selectedText, onAfterDiscussionApply, onAddHighlightRef]);
+    onAfterDiscussionApply?.();
+  }, [editor, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, pageId]);
 
   const openFormatPanel = useCallback(() => setShowFormatPanel(true), []);
   const openHyperlinkMenu = useCallback(() => {
     setShowFormatPanel(false);
     setShowHyperlinkMenu(true);
+    setShowDiscussionMenu(false);
   }, []);
   const openDiscussionMenu = useCallback(() => {
     setShowFormatPanel(false);
+    setShowHyperlinkMenu(false);
     setShowDiscussionMenu(true);
   }, []);
   const closePanels = useCallback(() => {
@@ -547,40 +534,44 @@ export function useTiptapEditor(options) {
     return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
   }, [editor]);
 
-  // Listen for discussion deletions and remove marks
+  // Listen for discussion-deleted / discussion-unlinked events to remove highlight nodes
   useEffect(() => {
-    if (!editor) return;
-    const handleDiscussionDeleted = (e) => {
-      const { discussionId } = e.detail;
+    const handleRemove = (e) => {
+      if (!editor) return;
+      const { discussionId } = e.detail || {};
       if (!discussionId) return;
-      // Walk the entire document and remove discussionHighlight nodes with this ID
-      const { doc } = editor.state;
-      const removals = [];
-      doc.descendants((node, pos) => {
-        if (node.type.name === 'discussionHighlight' && node.attrs['data-discussion-id'] === discussionId) {
-          removals.push({ pos, text: node.attrs.text || '', size: node.nodeSize });
-        }
-      });
-      if (removals.length > 0) {
-        const wasEditable = editor.isEditable;
-        if (!wasEditable) editor.setEditable(true);
-        let tr = editor.state.tr;
-        for (let i = removals.length - 1; i >= 0; i--) {
-          const { pos, text, size } = removals[i];
-          tr = tr.replaceWith(pos, pos + size, editor.state.schema.text(text));
-        }
-        editor.view.dispatch(tr);
-        if (!wasEditable) editor.setEditable(false);
-        if (onAfterDiscussionApply) onAfterDiscussionApply();
-      }
+      editor.commands.removeDiscussionHighlight(discussionId);
     };
-    window.addEventListener('discussion-deleted', handleDiscussionDeleted);
-    window.addEventListener('discussion-unlinked', handleDiscussionDeleted);
+
+    window.addEventListener('discussion-deleted', handleRemove);
+    window.addEventListener('discussion-unlinked', handleRemove);
     return () => {
-      window.removeEventListener('discussion-deleted', handleDiscussionDeleted);
-      window.removeEventListener('discussion-unlinked', handleDiscussionDeleted);
+      window.removeEventListener('discussion-deleted', handleRemove);
+      window.removeEventListener('discussion-unlinked', handleRemove);
     };
   }, [editor]);
+
+  // Stale highlight cleanup — remove highlight nodes for discussions no longer in documentDiscussions
+  useEffect(() => {
+    if (!editor || documentDiscussions === null) return;
+    const validIds = new Set(documentDiscussions.map(d => d.id));
+    const { doc, tr } = editor.state;
+    const toRemove = [];
+    doc.descendants((node, pos) => {
+      if (
+        node.type.name === 'discussionHighlight' &&
+        !validIds.has(node.attrs['data-discussion-id'])
+      ) {
+        toRemove.push({ from: pos, to: pos + node.nodeSize });
+      }
+    });
+    if (toRemove.length > 0) {
+      for (let i = toRemove.length - 1; i >= 0; i--) {
+        tr.delete(toRemove[i].from, toRemove[i].to);
+      }
+      editor.view.dispatch(tr);
+    }
+  }, [editor, documentDiscussions]);
 
   return {
     editor,
@@ -600,7 +591,6 @@ export function useTiptapEditor(options) {
     removeHyperlink,
     applyDiscussionHighlight,
     // handlers are no longer needed — Tiptap manages its own event listeners.
-    // Keeping the shape for backward compat with any code that spreads handlers.
     handlers: {},
   };
 }

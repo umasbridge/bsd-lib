@@ -56,7 +56,6 @@ export function TextEl({
   onWidthChange,
   linkMode,
 }) {
-  const { onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, onAddHighlightRef } = useEditorContext();
   const effectiveMinHeight = minHeight ?? (mode === 'cell' ? 20 : LAYOUT.MIN_ELEMENT_HEIGHT);
 
   const wrapperRef = useRef(null);
@@ -203,101 +202,42 @@ export function TextEl({
     editor.chain().focus().setIndentRight(value).run();
   }, [editor]);
 
-  // ReadOnly mode: detect native text selection for discussion button
-  const [readOnlySelection, setReadOnlySelection] = useState(null); // { text, position, pmRange }
-  const [readOnlyDiscussionMenu, setReadOnlyDiscussionMenu] = useState(false);
+
+  // View-mode discussion: detect native text selection in read-only mode
+  const { onCreateDiscussion } = useEditorContext();
+  const [viewModeSelection, setViewModeSelection] = useState(null); // { text, position }
+  const [showViewDiscussionMenu, setShowViewDiscussionMenu] = useState(false);
 
   useEffect(() => {
-    if (!readOnly || !editor?.view?.dom) return;
-    const dom = editor.view.dom;
+    if (!readOnly || !onCreateDiscussion) return;
+    const editorDom = editor?.view?.dom;
+    if (!editorDom) return;
 
-    const handleMouseUp = () => {
-      // Small delay to let browser finalize selection
-      setTimeout(() => {
-        const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || !dom.contains(sel.anchorNode)) {
-          if (!readOnlyDiscussionMenu) setReadOnlySelection(null);
-          return;
-        }
-        const text = sel.toString().trim();
-        if (!text) {
-          if (!readOnlyDiscussionMenu) setReadOnlySelection(null);
-          return;
-        }
-        const range = sel.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-
-        // Capture ProseMirror positions NOW while native selection exists
-        let pmRange = null;
-        try {
-          const { view } = editor;
-          const anchor = view.posAtDOM(sel.anchorNode, sel.anchorOffset);
-          const head = view.posAtDOM(sel.focusNode, sel.focusOffset);
-          pmRange = { from: Math.min(anchor, head), to: Math.max(anchor, head) };
-        } catch {
-          // posAtDOM can fail if selection is outside editor
-        }
-
-        setReadOnlySelection({
-          text,
-          position: { x: rect.left + rect.width / 2, y: rect.top, bottom: rect.bottom },
-          pmRange,
-        });
-      }, 10);
-    };
-
-    const handleMouseDown = (e) => {
-      if (e.target.closest('[data-discussion-menu]')) return;
-      if (readOnlyDiscussionMenu) {
-        setReadOnlyDiscussionMenu(false);
-        setReadOnlySelection(null);
+    const handleSelectionChange = () => {
+      if (showViewDiscussionMenu) return; // keep menu open while interacting
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setViewModeSelection(null);
+        return;
       }
+      // Check selection is inside this editor
+      const range = sel.getRangeAt(0);
+      if (!editorDom.contains(range.commonAncestorContainer)) {
+        setViewModeSelection(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text) { setViewModeSelection(null); return; }
+      const rect = range.getBoundingClientRect();
+      setViewModeSelection({
+        text,
+        position: { x: rect.left + rect.width / 2, y: rect.top, bottom: rect.bottom },
+      });
     };
 
-    dom.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => {
-      dom.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('mousedown', handleMouseDown);
-    };
-  }, [readOnly, editor, readOnlyDiscussionMenu]);
-
-  const handleReadOnlyDiscussionApply = useCallback(async (target) => {
-    if (!editor || !readOnlySelection?.pmRange) return;
-
-    const { from, to } = readOnlySelection.pmRange;
-    const highlightText = readOnlySelection.text;
-
-    // Create discussion first (before toggling editable, to avoid triggering onChange)
-    let discussionId;
-    if (target.isNew) {
-      if (!onCreateDiscussion) return;
-      discussionId = await onCreateDiscussion(target.discussionName, highlightText, pageId);
-      if (!discussionId) return;
-    } else {
-      discussionId = target.discussionId;
-      if (onAddToDiscussion) onAddToDiscussion(discussionId, highlightText, pageId);
-    }
-
-    // Temporarily enable editing, set selection, insert discussion node, restore
-    editor.setEditable(true);
-    editor.chain().setTextSelection({ from, to }).setDiscussionHighlight({ 'data-discussion-id': discussionId }).run();
-    editor.setEditable(false);
-
-    setReadOnlyDiscussionMenu(false);
-    setReadOnlySelection(null);
-
-    // Update in-memory _highlights so save doesn't lose them
-    if (onAddHighlightRef) onAddHighlightRef({ discussionId, text: highlightText, pageId: pageId || null });
-
-    // Auto-save so the highlight persists
-    if (onAfterDiscussionApply) onAfterDiscussionApply();
-  }, [editor, readOnlySelection, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, onAddHighlightRef, pageId]);
-
-  // Wrap applyDiscussionHighlight to inject pageId
-  const applyDiscussionHighlightWithPage = useCallback((target) => {
-    return applyDiscussionHighlight({ ...target, pageId });
-  }, [applyDiscussionHighlight, pageId]);
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [readOnly, editor, onCreateDiscussion, showViewDiscussionMenu]);
 
   // Cell mode: block format bar
   const [showBlockBar, setShowBlockBar] = useState(false);
@@ -408,30 +348,31 @@ export function TextEl({
             />
           )}
 
-          {/* Discussion Menu */}
+          {/* Discussion Menu (edit mode) */}
           {!readOnly && showDiscussionMenu && (
             <DiscussionMenu
+              pageId={pageId}
               selectedText={selection.selectedText}
               position={selection.position}
-              onApply={applyDiscussionHighlightWithPage}
+              onApply={applyDiscussionHighlight}
               onClose={closePanels}
             />
           )}
 
-          {/* ReadOnly: floating discussion button on text selection */}
-          {readOnly && readOnlySelection && !readOnlyDiscussionMenu && (
+          {/* View-mode discussion button — minimal floating 💬 icon */}
+          {readOnly && viewModeSelection && !showViewDiscussionMenu && (
             <div
               data-discussion-menu=""
               className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
               style={{
-                left: readOnlySelection.position.x - 20,
-                top: readOnlySelection.position.y - 44,
+                left: viewModeSelection.position.x - 16,
+                top: viewModeSelection.position.y - 40,
               }}
               onMouseDown={(e) => e.stopPropagation()}
             >
               <button
-                className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
-                onClick={() => setReadOnlyDiscussionMenu(true)}
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-yellow-100 text-yellow-600"
+                onClick={() => setShowViewDiscussionMenu(true)}
                 title="Discussion"
               >
                 <MessageSquare className="h-4 w-4" />
@@ -439,15 +380,24 @@ export function TextEl({
             </div>
           )}
 
-          {/* ReadOnly: discussion menu */}
-          {readOnly && readOnlyDiscussionMenu && readOnlySelection && (
+          {/* View-mode discussion menu */}
+          {readOnly && showViewDiscussionMenu && viewModeSelection && (
             <DiscussionMenu
-              selectedText={readOnlySelection.text}
-              position={readOnlySelection.position}
-              onApply={handleReadOnlyDiscussionApply}
-              onClose={() => { setReadOnlyDiscussionMenu(false); setReadOnlySelection(null); }}
+              pageId={pageId}
+              selectedText={viewModeSelection.text}
+              position={viewModeSelection.position}
+              onApply={async (target) => {
+                await applyDiscussionHighlight(target);
+                setShowViewDiscussionMenu(false);
+                setViewModeSelection(null);
+              }}
+              onClose={() => {
+                setShowViewDiscussionMenu(false);
+                setViewModeSelection(null);
+              }}
             />
           )}
+
         </Resizable>
       </div>
     );
@@ -517,9 +467,10 @@ export function TextEl({
         />
       )}
 
-      {/* Discussion Menu */}
+      {/* Discussion Menu (edit mode) */}
       {!readOnly && showDiscussionMenu && (
         <DiscussionMenu
+          pageId={pageId}
           selectedText={selection.selectedText}
           position={selection.position}
           onApply={applyDiscussionHighlight}
@@ -527,20 +478,20 @@ export function TextEl({
         />
       )}
 
-      {/* ReadOnly: floating discussion button on text selection */}
-      {readOnly && readOnlySelection && !readOnlyDiscussionMenu && (
+      {/* View-mode discussion button */}
+      {readOnly && viewModeSelection && !showViewDiscussionMenu && (
         <div
           data-discussion-menu=""
           className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
           style={{
-            left: readOnlySelection.position.x - 20,
-            top: readOnlySelection.position.y - 44,
+            left: viewModeSelection.position.x - 16,
+            top: viewModeSelection.position.y - 40,
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
-            className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
-            onClick={() => setReadOnlyDiscussionMenu(true)}
+            className="h-8 w-8 flex items-center justify-center rounded hover:bg-yellow-100 text-yellow-600"
+            onClick={() => setShowViewDiscussionMenu(true)}
             title="Discussion"
           >
             <MessageSquare className="h-4 w-4" />
@@ -548,15 +499,24 @@ export function TextEl({
         </div>
       )}
 
-      {/* ReadOnly: discussion menu */}
-      {readOnly && readOnlyDiscussionMenu && readOnlySelection && (
+      {/* View-mode discussion menu */}
+      {readOnly && showViewDiscussionMenu && viewModeSelection && (
         <DiscussionMenu
-          selectedText={readOnlySelection.text}
-          position={readOnlySelection.position}
-          onApply={handleReadOnlyDiscussionApply}
-          onClose={() => { setReadOnlyDiscussionMenu(false); setReadOnlySelection(null); }}
+          pageId={pageId}
+          selectedText={viewModeSelection.text}
+          position={viewModeSelection.position}
+          onApply={async (target) => {
+            await applyDiscussionHighlight(target);
+            setShowViewDiscussionMenu(false);
+            setViewModeSelection(null);
+          }}
+          onClose={() => {
+            setShowViewDiscussionMenu(false);
+            setViewModeSelection(null);
+          }}
         />
       )}
+
     </div>
   );
 }

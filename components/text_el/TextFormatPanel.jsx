@@ -257,19 +257,18 @@ export function TextFormatPanel({
               <Link className="h-4 w-4" />
             </button>
           )}
-          {onOpenDiscussion && (
-            <>
-              <div className="w-px h-6 bg-gray-200 mx-0.5" />
-              <button
-                className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
-                onClick={onOpenDiscussion}
-                title="Discussion"
-              >
-                <MessageSquare className="h-4 w-4" />
-              </button>
-            </>
-          )}
         </>
+      )}
+
+      {/* Discussion */}
+      {allowHyperlinks && onOpenDiscussion && (
+        <button
+          className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 text-yellow-600"
+          onClick={onOpenDiscussion}
+          title="Discussion"
+        >
+          <MessageSquare className="h-4 w-4" />
+        </button>
       )}
     </div>
   );

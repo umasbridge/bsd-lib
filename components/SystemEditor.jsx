@@ -272,9 +272,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
       if (elFmt.htmlContent) {
         // Apply suit conversion to stored HTML (may contain unconverted abbreviations)
         htmlContent = stripFontSize(stripSuitColorSpans(elFmt.htmlContent));
-        // Only apply replaceSuitAbbreviations if no rich HTML tags (links, discussion spans)
-        // that have attributes which would be corrupted (UUIDs, URLs)
-        if (!/data-(page-id|discussion-id)/.test(htmlContent)) {
+        if (!/data-page-id/.test(htmlContent)) {
           htmlContent = replaceSuitAbbreviations(htmlContent);
         }
         htmlContent = colorizeSuitSymbols(htmlContent);
@@ -372,9 +370,7 @@ export function transformToPages(system, formatting) {
       if (elFmt.htmlContent) {
         // Apply suit conversion to stored HTML (may contain unconverted abbreviations)
         htmlContent = stripFontSize(stripSuitColorSpans(elFmt.htmlContent));
-        // Only apply replaceSuitAbbreviations if no rich HTML tags (links, discussion spans)
-        // that have attributes which would be corrupted (UUIDs, URLs)
-        if (!/data-(page-id|discussion-id)/.test(htmlContent)) {
+        if (!/data-page-id/.test(htmlContent)) {
           htmlContent = replaceSuitAbbreviations(htmlContent);
         }
         htmlContent = colorizeSuitSymbols(htmlContent);
@@ -830,12 +826,12 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
       if (rf) {
         if (rf.bidHtml) {
           let bh = stripFontSize(rf.bidHtml);
-          const bidHasRichHtml = /<img /.test(bh) || /data-(page-id|discussion-id)/.test(bh);
+          const bidHasRichHtml = /<img /.test(bh) || /data-page-id/.test(bh);
           if (bh.includes('<img ')) {
             // Hand diagram images: use as-is, no suit conversion (base64 would be corrupted)
             row.bidHtml = bh;
           } else if (bidHasRichHtml) {
-            // Has tags with attributes (links, discussion spans, etc.) — skip replaceSuitAbbreviations
+            // Has tags with attributes (links) — skip replaceSuitAbbreviations
             // to avoid corrupting attribute values (UUIDs, URLs)
             if (bh.includes('<a ')) bh = refreshLinkPageIds(bh, pageLookup);
             row.bidHtml = colorizeSuitSymbols(stripSuitColorSpans(bh));
@@ -851,7 +847,7 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
           for (let i = 0; i < rf.columns.length && i < row.columns.length; i++) {
             if (rf.columns[i]?.html) {
               let colHtml = stripFontSize(rf.columns[i].html);
-              const hasRichHtml = /data-(page-id|discussion-id)/.test(colHtml);
+              const hasRichHtml = /data-page-id/.test(colHtml);
               if (hasRichHtml) {
                 if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
                 colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
@@ -866,7 +862,7 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
         } else if (rf.html && row.columns?.[0]) {
           // Backward compat: single column html
           let colHtml = stripFontSize(rf.html);
-          const hasRichHtml = /data-(page-id|discussion-id)/.test(colHtml);
+          const hasRichHtml = /data-page-id/.test(colHtml);
           if (hasRichHtml) {
             if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
             colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
@@ -902,7 +898,7 @@ function extractElementFormatting(el) {
     if (el.fillColor && el.fillColor !== 'transparent') fmt.fillColor = el.fillColor;
     if (el.margin) fmt.margin = el.margin;
     // Preserve htmlContent if it contains styling or marks that markdown can't express
-    if (el.htmlContent && (/margin-left|margin-right/.test(el.htmlContent) || /data-discussion-id/.test(el.htmlContent))) {
+    if (el.htmlContent && /margin-left|margin-right/.test(el.htmlContent)) {
       fmt.htmlContent = el.htmlContent;
     }
     return Object.keys(fmt).length > 0 ? fmt : null;
@@ -1068,7 +1064,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, exitTriggerRef, conventionsPages }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -1113,8 +1109,10 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     // Reverse-transform to get updated md + formatting
     if (onSave && systemRef.current) {
       const { system, formatting } = reverseTransformPages(updated, systemRef.current);
-      // Preserve _highlights from previous formatting (not part of reverse transform)
-      if (formattingRef.current._highlights) formatting._highlights = formattingRef.current._highlights;
+      // Preserve _highlights from previous formatting (cross-device discussion index)
+      if (formattingRef.current._highlights) {
+        formatting._highlights = formattingRef.current._highlights;
+      }
       const newMd = toSystemMd(system);
       systemRef.current = system;
       formattingRef.current = formatting;
@@ -1134,8 +1132,10 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const handleFullSave = useCallback(async () => {
     if (onSave && systemRef.current) {
       const { system, formatting } = reverseTransformPages(pagesRef.current, systemRef.current);
-      // Preserve _highlights from previous formatting (not part of reverse transform)
-      if (formattingRef.current._highlights) formatting._highlights = formattingRef.current._highlights;
+      // Preserve _highlights from previous formatting (cross-device discussion index)
+      if (formattingRef.current._highlights) {
+        formatting._highlights = formattingRef.current._highlights;
+      }
       const newMd = toSystemMd(system);
       systemRef.current = system;
       formattingRef.current = formatting;
@@ -1297,23 +1297,17 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     [pages]
   );
 
-  const handleAddHighlightRef = useCallback((highlight) => {
-    if (!formattingRef.current._highlights) formattingRef.current._highlights = [];
-    formattingRef.current._highlights.push(highlight);
-  }, []);
-
   const editorCtx = useMemo(() => ({
     availablePages,
     onHyperlinkClick: handleHyperlinkClick,
     onCreatePage: handleCreatePage,
-    documentDiscussions: documentDiscussions || [],
-    onCreateDiscussion: onCreateDiscussion || null,
-    onAddToDiscussion: onAddToDiscussion || null,
-    onDiscussionHighlightClick: onDiscussionHighlightClick || null,
-    onAfterDiscussionApply: onAfterDiscussionApply || handleFullSave,
-    onAddHighlightRef: handleAddHighlightRef,
     conventionsPages: conventionsPages || null,
-  }), [availablePages, handleHyperlinkClick, handleCreatePage, documentDiscussions, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, onAfterDiscussionApply, handleFullSave, handleAddHighlightRef, conventionsPages]);
+    onCreateDiscussion,
+    onAddToDiscussion,
+    onDiscussionHighlightClick,
+    documentDiscussions,
+    onAfterDiscussionApply,
+  }), [availablePages, handleHyperlinkClick, handleCreatePage, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply]);
 
   const mainPage = (startPageId && pages.find((p) => p.id === startPageId)) || pages.find((p) => p.id === 'main');
 

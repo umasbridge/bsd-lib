@@ -10,13 +10,13 @@ const EditorContext = createContext({
   availablePages: [],
   onHyperlinkClick: null,
   onCreatePage: null,
-  documentDiscussions: null,
+  conventionsPages: null,
+  // Discussion integration
   onCreateDiscussion: null,
   onAddToDiscussion: null,
   onDiscussionHighlightClick: null,
+  documentDiscussions: null, // null (not []) so components without EditorProvider don't trigger stale cleanup
   onAfterDiscussionApply: null,
-  onAddHighlightRef: null, // (highlight) => void — updates formattingRef._highlights
-  conventionsPages: null, // [{ name, elements }] from Conventions doc
 });
 
 export const EditorProvider = EditorContext.Provider;
