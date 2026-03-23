@@ -222,38 +222,8 @@ function mapRow(row, pageLookup) {
  * Uses elementNames (saved during extractPageFormatting) to detect misalignment.
  */
 function reorderElements(elements, pageFmt) {
-  const savedNames = pageFmt.elementNames;
-  if (!savedNames || savedNames.length === 0 || elements.length === 0) return elements;
-  if (elements.length !== savedNames.length) return elements;
-
-  // Build current name list from parsed elements
-  const currentNames = elements.map(el => {
-    if (el.type === 'table') return el.name || '';
-    if (el.type === 'note') return `__text__${(el.content || '').slice(0, 30)}`;
-    return `__${el.type}__`;
-  });
-
-  // Check if already aligned
-  const aligned = currentNames.every((n, i) => n === savedNames[i]);
-  if (aligned) return elements;
-
-  // Try to reorder: for each saved name, find the matching element
-  const remaining = [...elements];
-  const reordered = [];
-  for (const name of savedNames) {
-    const idx = remaining.findIndex(el => {
-      const elName = el.type === 'table' ? (el.name || '') :
-        el.type === 'note' ? `__text__${(el.content || '').slice(0, 30)}` :
-        `__${el.type}__`;
-      return elName === name;
-    });
-    if (idx !== -1) {
-      reordered.push(remaining.splice(idx, 1)[0]);
-    }
-  }
-  // Append any unmatched elements at the end
-  reordered.push(...remaining);
-  return reordered;
+  // Markdown order is authoritative — no reordering needed.
+  return elements;
 }
 
 function buildPage(sourcePage, pageLookup, formatting) {
@@ -943,13 +913,8 @@ function extractPageFormatting(pageData) {
     fmt.elements = elFmts.map(f => f || {});
   }
 
-  // Save element names/types so we can detect and fix order misalignment on reload
-  const elNames = elements.map(el => {
-    if (el.type === 'bidtable') return el.name || '';
-    if (el.type === 'text') return `__text__${(el.content || '').slice(0, 30)}`;
-    return `__${el.type}__`;
-  });
-  if (elNames.length > 0) fmt.elementNames = elNames;
+  // Element order is now authoritative from markdown (toSystemMd writes in correct order).
+  // No longer save elementNames — reorderElements will skip when savedNames is absent.
 
   return Object.keys(fmt).length > 0 ? fmt : null;
 }
@@ -1083,6 +1048,35 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const [hasUnsavedSubPageChanges, setHasUnsavedSubPageChanges] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
+  // ─── Backup to localStorage on any unplanned closure ───
+  const savedCleanlyRef = useRef(false);
+
+  const backupPages = useCallback(() => {
+    if (!docId || !systemRef.current || savedCleanlyRef.current) return;
+    try {
+      const { system, formatting } = reverseTransformPages(pagesRef.current, systemRef.current);
+      const backupMd = toSystemMd(system);
+      const backup = { md: backupMd, formatting, timestamp: Date.now() };
+      localStorage.setItem(`bsd-backup-${docId}`, JSON.stringify(backup));
+    } catch (e) {
+      console.warn('Backup failed:', e);
+    }
+  }, [docId]);
+
+  // beforeunload: covers browser refresh, tab close, dev server restart
+  useEffect(() => {
+    if (!docId) return;
+    const onBeforeUnload = () => backupPages();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [docId, backupPages]);
+
+  // Component unmount: covers React navigation, HMR unmount, etc.
+  useEffect(() => {
+    if (!docId) return;
+    return () => backupPages();
+  }, [docId, backupPages]);
+
   // Sync sub-page edits back to pages state.
   // Uses pagesRef so handleSave always sees the latest data synchronously,
   // even if React hasn't flushed the setPages update yet.
@@ -1117,6 +1111,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
       systemRef.current = system;
       formattingRef.current = formatting;
       await onSave({ md: newMd, formatting, systemName: system.systemName });
+      if (docId) { localStorage.removeItem(`bsd-backup-${docId}`); savedCleanlyRef.current = true; }
 
       // Re-run forward transform so suit symbols and cross-references are applied
       // to any pages that were created in-memory (not from markdown)
@@ -1140,9 +1135,10 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
       systemRef.current = system;
       formattingRef.current = formatting;
       await onSave({ md: newMd, formatting, systemName: system.systemName });
+      if (docId) { localStorage.removeItem(`bsd-backup-${docId}`); savedCleanlyRef.current = true; }
     }
     setHasUnsavedSubPageChanges(false);
-  }, [onSave]);
+  }, [onSave, docId]);
 
   // Tab-bar exit: show save dialog if in edit mode, otherwise exit directly
   const handleExitClick = useCallback(() => {
@@ -1360,16 +1356,18 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                     // Jump to this breadcrumb: slice splitStack so this page becomes visible
                     // If it's the main page (i === 0 and isMain), keep only first split entry
                     // Otherwise keep splitStack up to index that makes this page the second-to-last visible
+                    let keptSplitStack;
                     if (entry.isMain) {
                       // Show main + first split (if any), drop everything after first split
-                      setSplitStack(prev => prev.slice(0, 1));
+                      keptSplitStack = splitStack.slice(0, 1);
                     } else {
-                      // This is splitStack[i - breadcrumbAdjust]. We want this page + its child visible.
-                      // entry is at pageChain index i, which is splitStack index (i - 1) if main is at 0.
-                      // We want splitStack trimmed so this entry is second-to-last in the chain.
                       const splitIndex = i - (pageChain[0].isMain ? 1 : 0);
-                      setSplitStack(prev => prev.slice(0, splitIndex + 2));
+                      keptSplitStack = splitStack.slice(0, splitIndex + 2);
                     }
+                    // Close popups whose source page is no longer in the visible chain
+                    const visibleIds = new Set([mainPage.id, ...keptSplitStack.map(sp => sp.page.id)]);
+                    setPopupStack(prev => prev.filter(p => visibleIds.has(p.sourcePageId)));
+                    setSplitStack(keptSplitStack);
                   }}
                   style={{
                     padding: '4px 12px',
@@ -1445,7 +1443,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                   onExit={onExit}
                   onPageChange={handleMainPageChange}
                   mainPageId="main"
-                  startInEditMode={readOnly ? false : startInEditMode}
+                  startInEditMode={readOnly ? false : isEditMode}
                   readOnly={readOnly}
                   onEditModeChange={setIsEditMode}
                   externalDirty={hasUnsavedSubPageChanges}
@@ -1493,7 +1491,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
           <div
             style={{
               position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400,
             }}
             onClick={() => setShowExitDialog(false)}
           >

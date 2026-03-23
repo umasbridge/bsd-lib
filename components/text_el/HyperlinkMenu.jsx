@@ -144,8 +144,9 @@ export function HyperlinkMenu({
     <div
       ref={menuRef}
       data-hyperlink-menu=""
-      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-5 px-5"
+      className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-5 px-5"
       style={{
+        zIndex: 300,
         left: adjustedPosition.x,
         top: adjustedPosition.y,
         width: 340,

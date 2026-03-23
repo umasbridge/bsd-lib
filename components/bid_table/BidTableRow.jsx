@@ -379,7 +379,7 @@ export function BidTableRow({
 
     const columnContent = (
       <div
-        className="pr-1 py-1.5 pl-2"
+        className="px-1 py-1.5"
         data-row-index={rowIndexMap?.[row.id]}
         data-col-index={primaryColIndex}
         style={{
@@ -526,7 +526,7 @@ export function BidTableRow({
               boxShadow: isCellSelected ? 'inset 0 0 0 2px #3B82F6' : 'none',
             }}
           >
-            <div ref={bidCellRef} className="pl-1.5 pr-1 py-1.5 flex items-center relative" data-column-type="bid" data-row-index={rowIndexMap?.[row.id]} data-col-index={-1}>
+            <div ref={bidCellRef} className="px-1 py-1.5 flex items-center relative" data-column-type="bid" data-row-index={rowIndexMap?.[row.id]} data-col-index={-1}>
               <div className="flex-1 relative">
                 {/* Bid cell: raw HTML for images (hand diagrams), TextEl otherwise */}
                 {row.bidHtml && row.bidHtml.includes('<img ') ? (

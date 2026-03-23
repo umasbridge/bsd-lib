@@ -147,7 +147,7 @@ export function TextEl({
   // Tiptap editor classes
   const modeClasses = {
     default: 'p-3 min-w-[100px]',
-    cell: 'px-2 text-sm',
+    cell: 'px-1 text-sm',
   };
 
   const editorClassName = `outline-none whitespace-pre-wrap break-words leading-relaxed ${modeClasses[mode] || ''} ${className}`.trim();

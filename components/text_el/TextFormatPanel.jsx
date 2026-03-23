@@ -44,6 +44,7 @@ export function TextFormatPanel({
 
   const allowHyperlinks = mode !== 'title';
   const panelRef = useRef(null);
+  const preventFocusLoss = (e) => e.preventDefault();
 
   useLayoutEffect(() => {
     if (!panelRef.current) return;
@@ -54,7 +55,9 @@ export function TextFormatPanel({
     const gap = 6;
     const placeAbove = rect.top - panelHeight - gap > 0;
     const topPos = placeAbove ? rect.top - panelHeight - gap : rect.bottom + gap;
-    const leftPos = Math.max(10, rect.left + rect.width / 2 - 160);
+    const panelWidth = panelRef.current.offsetWidth || 320;
+    let leftPos = Math.max(10, rect.left + rect.width / 2 - 160);
+    leftPos = Math.min(leftPos, window.innerWidth - panelWidth - 10);
     panelRef.current.style.top = topPos + 'px';
     panelRef.current.style.left = leftPos + 'px';
   });
@@ -63,9 +66,10 @@ export function TextFormatPanel({
     <div
       ref={panelRef}
       data-format-panel=""
-      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1 flex items-center gap-0.5"
+      className="fixed bg-white border border-gray-200 rounded-lg shadow-lg p-1 flex items-center gap-0.5"
       style={{
-        left: Math.max(10, position.x - 160),
+        zIndex: 300,
+        left: Math.max(10, Math.min(position.x - 160, window.innerWidth - 330)),
         top: Math.max(10, position.y - 50),
       }}
       onClick={(e) => e.stopPropagation()}
@@ -75,6 +79,7 @@ export function TextFormatPanel({
       {/* Bold */}
       <button
         className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+        onMouseDown={preventFocusLoss}
         onClick={() => onFormat({ bold: true })}
         title="Bold (Cmd+B)"
       >
@@ -84,6 +89,7 @@ export function TextFormatPanel({
       {/* Italic */}
       <button
         className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+        onMouseDown={preventFocusLoss}
         onClick={() => onFormat({ italic: true })}
         title="Italic (Cmd+I)"
       >
@@ -93,6 +99,7 @@ export function TextFormatPanel({
       {/* Underline */}
       <button
         className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+        onMouseDown={preventFocusLoss}
         onClick={() => onFormat({ underline: true })}
         title="Underline (Cmd+U)"
       >
@@ -102,6 +109,7 @@ export function TextFormatPanel({
       {/* Strikethrough */}
       <button
         className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+        onMouseDown={preventFocusLoss}
         onClick={() => onFormat({ strikethrough: true })}
         title="Strikethrough"
       >
@@ -113,6 +121,7 @@ export function TextFormatPanel({
       {/* Subscript */}
       <button
         className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+        onMouseDown={preventFocusLoss}
         onClick={() => onFormat({ subscript: true })}
         title="Subscript"
       >
@@ -122,6 +131,7 @@ export function TextFormatPanel({
       {/* Superscript */}
       <button
         className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+        onMouseDown={preventFocusLoss}
         onClick={() => onFormat({ superscript: true })}
         title="Superscript"
       >
@@ -134,6 +144,7 @@ export function TextFormatPanel({
       <div className="relative">
         <button
           className="h-8 px-2 text-xs flex items-center rounded hover:bg-gray-100"
+          onMouseDown={preventFocusLoss}
           onClick={() => {
             setShowFontSize(!showFontSize);
             setShowTextColor(false);
@@ -149,6 +160,7 @@ export function TextFormatPanel({
               <button
                 key={size}
                 className="block w-full px-3 py-1 text-left text-sm hover:bg-gray-100"
+                onMouseDown={preventFocusLoss}
                 onClick={() => {
                   onFormat({ fontSize: size });
                   setShowFontSize(false);
@@ -165,6 +177,7 @@ export function TextFormatPanel({
       <div className="relative">
         <button
           className="h-8 px-2 flex items-center rounded hover:bg-gray-100"
+          onMouseDown={preventFocusLoss}
           onClick={() => {
             setShowTextColor(!showTextColor);
             setShowFontSize(false);
@@ -184,6 +197,7 @@ export function TextFormatPanel({
                 key={color}
                 className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform"
                 style={{ backgroundColor: color }}
+                onMouseDown={preventFocusLoss}
                 onClick={() => {
                   onFormat({ color });
                   setShowTextColor(false);
@@ -198,6 +212,7 @@ export function TextFormatPanel({
       <div className="relative">
         <button
           className="h-8 px-2 flex items-center rounded hover:bg-gray-100"
+          onMouseDown={preventFocusLoss}
           onClick={() => {
             setShowBgColor(!showBgColor);
             setShowFontSize(false);
@@ -215,6 +230,7 @@ export function TextFormatPanel({
                   key={color}
                   className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform"
                   style={{ backgroundColor: color }}
+                  onMouseDown={preventFocusLoss}
                   onClick={() => {
                     onFormat({ backgroundColor: color });
                     setShowBgColor(false);
@@ -224,6 +240,7 @@ export function TextFormatPanel({
             </div>
             <button
               className="w-full mt-1 px-1 py-0.5 text-xs text-gray-600 hover:bg-gray-100 rounded flex items-center gap-1"
+              onMouseDown={preventFocusLoss}
               onClick={() => {
                 onFormat({ backgroundColor: 'transparent' });
                 setShowBgColor(false);
@@ -243,6 +260,7 @@ export function TextFormatPanel({
           {isHyperlinkSelected ? (
             <button
               className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 text-red-500"
+              onMouseDown={preventFocusLoss}
               onClick={onRemoveHyperlink}
               title="Remove Link"
             >
@@ -251,6 +269,7 @@ export function TextFormatPanel({
           ) : (
             <button
               className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+              onMouseDown={preventFocusLoss}
               onClick={onOpenHyperlink}
               title="Add Link"
             >
@@ -264,6 +283,7 @@ export function TextFormatPanel({
       {allowHyperlinks && onOpenDiscussion && (
         <button
           className="h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100 text-yellow-600"
+          onMouseDown={preventFocusLoss}
           onClick={onOpenDiscussion}
           title="Discussion"
         >
