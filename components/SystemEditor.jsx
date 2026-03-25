@@ -1049,7 +1049,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const [showExitDialog, setShowExitDialog] = useState(false);
 
   // ─── Backup to localStorage on any unplanned closure ───
-  const savedCleanlyRef = useRef(false);
+  const savedCleanlyRef = useRef(true);
 
   const backupPages = useCallback(() => {
     if (!docId || !systemRef.current || savedCleanlyRef.current) return;
@@ -1293,11 +1293,11 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     [pages]
   );
 
-  // Auto-save after discussion highlight is applied — saves current pages to Supabase
-  const handleAfterDiscussionApply = useCallback(async () => {
-    await handleFullSave();
-    onAfterDiscussionApply?.();
-  }, [handleFullSave, onAfterDiscussionApply]);
+  // After discussion highlight is applied — flush highlight index to Supabase.
+  // Does NOT do a full save; discussions update formatting directly.
+  const handleAfterDiscussionApply = useCallback(async (info) => {
+    onAfterDiscussionApply?.(info);
+  }, [onAfterDiscussionApply]);
 
   const editorCtx = useMemo(() => ({
     availablePages,
@@ -1395,7 +1395,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexShrink: 0 }}>
               {!readOnly && !isEditMode && (
                 <button
-                  onClick={() => { setIsEditMode(true); }}
+                  onClick={() => { setIsEditMode(true); savedCleanlyRef.current = false; }}
                   style={{
                     padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
                     borderRadius: '4px', background: 'white', cursor: 'pointer', whiteSpace: 'nowrap',

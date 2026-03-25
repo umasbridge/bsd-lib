@@ -54,6 +54,7 @@ const makeEmptyColumns = (count) =>
 
 export function BidTable({
   pageId,
+  elementIndex,
   initialRows,
   gridlines,
   initialLevelWidths,
@@ -729,6 +730,7 @@ export function BidTable({
           <BidTableRow
             key={row.id}
             pageId={pageId}
+            elementIndex={elementIndex}
             row={row}
             level={0}
             rowIndexMap={rowIndexMap}

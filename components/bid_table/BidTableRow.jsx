@@ -7,6 +7,7 @@ import { DEFAULT_ROW_MIN_HEIGHT } from './types';
 
 export function BidTableRow({
   pageId,
+  elementIndex,
   row,
   level,
   getLevelWidth,
@@ -410,6 +411,9 @@ export function BidTableRow({
           <TextEl
             mode="cell"
             pageId={pageId}
+            elementIndex={elementIndex}
+            rowIndex={rowIndexMap?.[row.id]}
+            colIndex={primaryColIndex}
             value={primaryCol.value}
             htmlValue={primaryCol.html}
             onChange={(text, html) => {
@@ -538,6 +542,9 @@ export function BidTableRow({
                   <TextEl
                     mode="cell"
                     pageId={pageId}
+                    elementIndex={elementIndex}
+                    rowIndex={rowIndexMap?.[row.id]}
+                    colIndex={-1}
                     value={row.bid}
                     htmlValue={row.bidHtml}
                     onChange={(text, html) => onUpdate(row.id, { bid: text, bidHtml: html })}
@@ -633,6 +640,7 @@ export function BidTableRow({
             <BidTableRow
               key={child.id}
               pageId={pageId}
+              elementIndex={elementIndex}
               row={child}
               level={level + 1}
               getLevelWidth={getLevelWidth}

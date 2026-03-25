@@ -31,6 +31,9 @@ import { LAYOUT } from './types';
 export function TextEl({
   mode,
   pageId,
+  elementIndex,
+  rowIndex,
+  colIndex,
   value,
   htmlValue,
   onChange,
@@ -79,9 +82,14 @@ export function TextEl({
     applyHyperlink,
     removeHyperlink,
     applyDiscussionHighlight,
+    saveViewModeSelection,
+    suppressSyncRef,
   } = useTiptapEditor({
     mode,
     pageId,
+    elementIndex,
+    rowIndex,
+    colIndex,
     initialHtml: htmlValue || value,
     onChange,
     onFocus,
@@ -91,13 +99,14 @@ export function TextEl({
 
   // Sync external htmlValue changes (but not while focused, to avoid cursor reset)
   useEffect(() => {
+    if (suppressSyncRef.current) return;
     if (editor && htmlValue !== undefined && !isFocused) {
       const currentHtml = editor.getHTML();
       if (currentHtml !== htmlValue) {
         editor.commands.setContent(htmlValue, false);
       }
     }
-  }, [editor, htmlValue, isFocused]);
+  }, [editor, htmlValue, isFocused, suppressSyncRef]);
 
   // Position floating block format bar at top-left of cell (avoid clipping in narrow cells)
   useLayoutEffect(() => {
@@ -207,6 +216,7 @@ export function TextEl({
   const { onCreateDiscussion } = useEditorContext();
   const [viewModeSelection, setViewModeSelection] = useState(null); // { text, position }
   const [showViewDiscussionMenu, setShowViewDiscussionMenu] = useState(false);
+  const viewModeSelectionRef = useRef(null); // snapshot of viewModeSelection when menu opens
 
   useEffect(() => {
     if (!readOnly || !onCreateDiscussion) return;
@@ -246,6 +256,53 @@ export function TextEl({
   const showMenu3 = isSelected && !readOnly;
   const showMenu2 = !readOnly && isFocused && !showHyperlinkMenu && !showDiscussionMenu && !isSelected && !selection.hasSelection;
   const showMenu1 = !readOnly && showFormatPanel && !showHyperlinkMenu && !showDiscussionMenu && selection.hasSelection && !isSelected;
+
+  // View-mode discussion UI — shared across default and cell modes
+  const viewModeDiscussionUI = readOnly && (
+    <>
+      {/* View-mode discussion button — minimal floating 💬 icon */}
+      {viewModeSelection && !showViewDiscussionMenu && (
+        <div
+          data-discussion-menu=""
+          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
+          style={{
+            left: viewModeSelection.position.x - 16,
+            top: viewModeSelection.position.y - 40,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className="h-8 w-8 flex items-center justify-center rounded hover:bg-yellow-100 text-yellow-600"
+            onClick={() => { saveViewModeSelection(); viewModeSelectionRef.current = viewModeSelection; setShowViewDiscussionMenu(true); }}
+            title="Discussion"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* View-mode discussion menu */}
+      {showViewDiscussionMenu && viewModeSelectionRef.current && (
+        <DiscussionMenu
+          pageId={pageId}
+          selectedText={viewModeSelectionRef.current.text}
+          position={viewModeSelectionRef.current.position}
+          onApply={async (target) => {
+            const result = await applyDiscussionHighlight(target);
+            if (result?.duplicate) return result;
+            setShowViewDiscussionMenu(false);
+            setViewModeSelection(null);
+            viewModeSelectionRef.current = null;
+          }}
+          onClose={() => {
+            setShowViewDiscussionMenu(false);
+            setViewModeSelection(null);
+            viewModeSelectionRef.current = null;
+          }}
+        />
+      )}
+    </>
+  );
 
   // Default mode: full wrapper with border, fill, resize
   if (mode === 'default') {
@@ -359,44 +416,7 @@ export function TextEl({
             />
           )}
 
-          {/* View-mode discussion button — minimal floating 💬 icon */}
-          {readOnly && viewModeSelection && !showViewDiscussionMenu && (
-            <div
-              data-discussion-menu=""
-              className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
-              style={{
-                left: viewModeSelection.position.x - 16,
-                top: viewModeSelection.position.y - 40,
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <button
-                className="h-8 w-8 flex items-center justify-center rounded hover:bg-yellow-100 text-yellow-600"
-                onClick={() => setShowViewDiscussionMenu(true)}
-                title="Discussion"
-              >
-                <MessageSquare className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-
-          {/* View-mode discussion menu */}
-          {readOnly && showViewDiscussionMenu && viewModeSelection && (
-            <DiscussionMenu
-              pageId={pageId}
-              selectedText={viewModeSelection.text}
-              position={viewModeSelection.position}
-              onApply={async (target) => {
-                await applyDiscussionHighlight(target);
-                setShowViewDiscussionMenu(false);
-                setViewModeSelection(null);
-              }}
-              onClose={() => {
-                setShowViewDiscussionMenu(false);
-                setViewModeSelection(null);
-              }}
-            />
-          )}
+          {viewModeDiscussionUI}
 
         </Resizable>
       </div>
@@ -478,44 +498,7 @@ export function TextEl({
         />
       )}
 
-      {/* View-mode discussion button */}
-      {readOnly && viewModeSelection && !showViewDiscussionMenu && (
-        <div
-          data-discussion-menu=""
-          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
-          style={{
-            left: viewModeSelection.position.x - 16,
-            top: viewModeSelection.position.y - 40,
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            className="h-8 w-8 flex items-center justify-center rounded hover:bg-yellow-100 text-yellow-600"
-            onClick={() => setShowViewDiscussionMenu(true)}
-            title="Discussion"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* View-mode discussion menu */}
-      {readOnly && showViewDiscussionMenu && viewModeSelection && (
-        <DiscussionMenu
-          pageId={pageId}
-          selectedText={viewModeSelection.text}
-          position={viewModeSelection.position}
-          onApply={async (target) => {
-            await applyDiscussionHighlight(target);
-            setShowViewDiscussionMenu(false);
-            setViewModeSelection(null);
-          }}
-          onClose={() => {
-            setShowViewDiscussionMenu(false);
-            setViewModeSelection(null);
-          }}
-        />
-      )}
+      {viewModeDiscussionUI}
 
     </div>
   );

@@ -27,7 +27,7 @@ import { useEditorContext } from '../EditorContext';
  *     applyFormat, applyHyperlink, removeHyperlink, handlers, editor }
  */
 export function useTiptapEditor(options) {
-  const { mode, initialHtml, onChange, onFocus, onBlur, readOnly, pageId } = options;
+  const { mode, initialHtml, onChange, onFocus, onBlur, readOnly, pageId, elementIndex, rowIndex, colIndex } = options;
   const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
@@ -434,6 +434,30 @@ export function useTiptapEditor(options) {
     editor.chain().focus().unsetLink().run();
   }, [readOnly, features.allowHyperlinks, editor]);
 
+  // Save Tiptap positions from view-mode selections (native selection may be lost by the time
+  // the user finishes interacting with the DiscussionMenu, especially on mobile)
+  const savedViewSelectionRef = useRef(null);
+
+  // Flag to suppress the htmlValue sync effect after inserting a discussion highlight.
+  // Without this, the sync effect sees that the editor HTML differs from the prop and resets it,
+  // erasing the just-inserted highlight node.
+  const suppressSyncRef = useRef(false);
+
+  const saveViewModeSelection = useCallback(() => {
+    if (!editor?.view) return;
+    const domSel = window.getSelection();
+    if (!domSel || domSel.isCollapsed || domSel.rangeCount === 0) return;
+    if (!editor.view.dom.contains(domSel.anchorNode)) return;
+    try {
+      const range = domSel.getRangeAt(0);
+      const from = editor.view.posAtDOM(range.startContainer, range.startOffset);
+      const to = editor.view.posAtDOM(range.endContainer, range.endOffset);
+      if (from != null && to != null && from !== to) {
+        savedViewSelectionRef.current = { from, to };
+      }
+    } catch { /* ignore */ }
+  }, [editor]);
+
   // Apply discussion highlight — replaces selected text with an atomic highlight node
   // Works in both edit and view mode (temporarily enables editing if needed)
   const applyDiscussionHighlight = useCallback(async (target) => {
@@ -443,7 +467,9 @@ export function useTiptapEditor(options) {
 
     if (target.action === 'create') {
       if (!onCreateDiscussion) return;
-      discussionId = await onCreateDiscussion(target.name, target.highlightedText, pageId);
+      const result = await onCreateDiscussion(target.name, target.highlightedText, pageId);
+      if (result?.duplicate) return result; // duplicate — menu stays open for user to switch to "Add to Existing"
+      discussionId = result;
     } else if (target.action === 'add') {
       if (!onAddToDiscussion) return;
       discussionId = await onAddToDiscussion(target.discussionId, target.highlightedText, pageId);
@@ -458,6 +484,7 @@ export function useTiptapEditor(options) {
 
     // In view mode, Tiptap doesn't track the native selection.
     // Resolve DOM selection to ProseMirror positions before replacing.
+    let inserted = false;
     const domSel = window.getSelection();
     if (domSel && domSel.rangeCount > 0 && !domSel.isCollapsed) {
       try {
@@ -469,15 +496,23 @@ export function useTiptapEditor(options) {
             'data-discussion-id': discussionId,
             text: target.highlightedText,
           }).run();
+          inserted = true;
         }
-      } catch {
-        // Fallback: try with current Tiptap selection
-        editor.chain().focus().deleteSelection().insertDiscussionHighlight({
-          'data-discussion-id': discussionId,
-          text: target.highlightedText,
-        }).run();
-      }
-    } else {
+      } catch { /* fall through to saved selection */ }
+    }
+
+    // Fallback: use saved view-mode positions (native selection lost on mobile after menu interaction)
+    if (!inserted && savedViewSelectionRef.current) {
+      const { from, to } = savedViewSelectionRef.current;
+      editor.chain().focus().setTextSelection({ from, to }).deleteSelection().insertDiscussionHighlight({
+        'data-discussion-id': discussionId,
+        text: target.highlightedText,
+      }).run();
+      savedViewSelectionRef.current = null;
+      inserted = true;
+    }
+
+    if (!inserted) {
       // Edit mode: Tiptap selection is already correct
       editor.chain().focus().deleteSelection().insertDiscussionHighlight({
         'data-discussion-id': discussionId,
@@ -485,11 +520,15 @@ export function useTiptapEditor(options) {
       }).run();
     }
 
+    // Suppress the htmlValue sync effect so it doesn't reset the editor content
+    // (the prop still has the old HTML without the highlight)
+    suppressSyncRef.current = true;
+
     if (wasReadOnly) editor.setEditable(false);
 
     setShowDiscussionMenu(false);
-    onAfterDiscussionApply?.();
-  }, [editor, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, pageId]);
+    onAfterDiscussionApply?.({ pageId, elementIndex, rowIndex, colIndex, html: editor.getHTML() });
+  }, [editor, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, pageId, elementIndex, rowIndex, colIndex]);
 
   const openFormatPanel = useCallback(() => setShowFormatPanel(true), []);
   const openHyperlinkMenu = useCallback(() => {
@@ -612,6 +651,8 @@ export function useTiptapEditor(options) {
     applyHyperlink,
     removeHyperlink,
     applyDiscussionHighlight,
+    saveViewModeSelection,
+    suppressSyncRef,
     // handlers are no longer needed — Tiptap manages its own event listeners.
     handlers: {},
   };

@@ -65,7 +65,7 @@ export function DiscussionMenu({
 
       setAdjustedPosition({ x: newX, y: newY });
     }
-  }, [position]);
+  }, [position, mode]);
 
   useEffect(() => {
     if (mode === 'create' && nameInputRef.current) {
@@ -74,10 +74,15 @@ export function DiscussionMenu({
     }
   }, [mode]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onApply({ action: 'create', name: trimmed, highlightedText: selectedText });
+    const result = await onApply({ action: 'create', name: trimmed, highlightedText: selectedText });
+    if (result?.duplicate) {
+      // Switch to "Add to Existing" tab with the duplicate name as search query
+      setMode('existing');
+      setSearchQuery(result.name || trimmed);
+    }
   };
 
   const handleAddToExisting = () => {

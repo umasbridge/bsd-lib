@@ -349,6 +349,7 @@ export function Page({
           <TextEl
             mode="default"
             pageId={page.id}
+            elementIndex={index}
             value={element.content}
             htmlValue={element.htmlContent}
             onChange={(text, html) => updateElement(element.id, { content: text, htmlContent: html })}
@@ -396,6 +397,7 @@ export function Page({
         <div key={key} data-table-name={element.name || ''}>
           <BidTable
             pageId={page.id}
+            elementIndex={index}
             initialRows={element.rows}
             initialColumnWidths={element.columnWidths}
             initialLevelWidths={element.levelWidths}
