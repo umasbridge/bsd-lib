@@ -5,6 +5,7 @@ import { EditorProvider } from './EditorContext';
 import { parseSystemMd } from '../lib/parseSystemMd';
 import { toSystemMd } from '../lib/toSystemMd';
 import { replaceSuitAbbreviations, colorizeSuitSymbols, stripSuitColorSpans } from '../lib/suitSymbols';
+import { Search } from 'lucide-react';
 
 // ─── ID generation ───
 
@@ -1029,7 +1030,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply, onSearch, onReturnToResults, navigateRef }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -1154,6 +1155,26 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     if (exitTriggerRef) exitTriggerRef.current = handleExitClick;
     return () => { if (exitTriggerRef) exitTriggerRef.current = null; };
   }, [exitTriggerRef, handleExitClick]);
+
+  // Expose navigateToPage for external callers (e.g. search)
+  const navigateToPage = useCallback((pageId) => {
+    if (!pageId || pageId === 'main') {
+      // Go to main: clear split stack and popups
+      setSplitStack([]);
+      setPopupStack([]);
+      return;
+    }
+    const targetPage = pagesRef.current.find((p) => p.id === pageId);
+    if (!targetPage) return;
+    // Open as split from main, clearing existing splits/popups
+    setPopupStack([]);
+    setSplitStack([{ page: targetPage }]);
+  }, []);
+
+  useEffect(() => {
+    if (navigateRef) navigateRef.current = navigateToPage;
+    return () => { if (navigateRef) navigateRef.current = null; };
+  }, [navigateRef, navigateToPage]);
 
   const handleHyperlinkClick = useCallback((target) => {
     // newtab mode: open page in a new browser tab
@@ -1391,8 +1412,37 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               {visiblePages[0]?.isMain ? 'Main' : (visiblePages[0]?.page.title || visiblePages[0]?.page.id)}
             </span>
 
-            {/* Edit / Exit controls when main page is a tab */}
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexShrink: 0 }}>
+            {/* Return to results / Search / Edit / Exit controls when main page is a tab */}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+              {onReturnToResults && (
+                <button
+                  onClick={onReturnToResults}
+                  style={{
+                    padding: '4px 8px', fontSize: '12px', border: '1px solid #2563eb',
+                    borderRadius: '4px', background: 'white', cursor: 'pointer',
+                    color: '#2563eb', whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#eff6ff'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                >
+                  ← Results
+                </button>
+              )}
+              {onSearch && (
+                <button
+                  onClick={onSearch}
+                  style={{
+                    padding: '4px 8px', border: '1px solid #d1d5db',
+                    borderRadius: '4px', background: 'white', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                  title="Search document"
+                >
+                  <Search size={14} style={{ color: '#6b7280' }} />
+                </button>
+              )}
               {!readOnly && !isEditMode && (
                 <button
                   onClick={() => { setIsEditMode(true); savedCleanlyRef.current = false; }}
@@ -1447,6 +1497,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                   readOnly={readOnly}
                   onEditModeChange={setIsEditMode}
                   externalDirty={hasUnsavedSubPageChanges}
+                  onSearch={onSearch}
+                  onReturnToResults={onReturnToResults}
                 />
               );
             }

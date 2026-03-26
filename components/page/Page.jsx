@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { X } from 'lucide-react';
+import { X, Search } from 'lucide-react';
 import { TextEl } from '../text_el';
 import { BidTable } from '../bid_table';
 import { TitleBar } from './TitleBar';
@@ -44,6 +44,8 @@ export function Page({
   externalDirty = false,
   maxHeight,
   readOnly = false,
+  onSearch,
+  onReturnToResults,
 }) {
   const isMain = mode === 'main';
   const isPopup = mode === 'popup';
@@ -681,9 +683,38 @@ export function Page({
               )}
             </div>
 
-            {/* Right: Edit (view mode only) + Exit (always) */}
+            {/* Right: Return to results + Search + Edit (view mode only) + Exit (always) */}
             {isMain && (
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {onReturnToResults && (
+                  <button
+                    onClick={onReturnToResults}
+                    style={{
+                      padding: '6px 8px', fontSize: '13px', border: '1px solid #2563eb',
+                      borderRadius: '6px', background: 'white', cursor: 'pointer',
+                      color: '#2563eb', display: 'flex', alignItems: 'center', gap: '4px',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#eff6ff'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                  >
+                    ← Results
+                  </button>
+                )}
+                {onSearch && (
+                  <button
+                    onClick={onSearch}
+                    style={{
+                      padding: '6px 8px', border: '1px solid #d1d5db',
+                      borderRadius: '6px', background: 'white', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                    title="Search document"
+                  >
+                    <Search size={16} style={{ color: '#6b7280' }} />
+                  </button>
+                )}
                 {isViewMode && !readOnly && (
                   <button
                     onClick={() => { setIsViewMode(false); onEditModeChange?.(true); }}
