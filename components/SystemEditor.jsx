@@ -1066,7 +1066,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   const [hasUnsavedSubPageChanges, setHasUnsavedSubPageChanges] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
-  // ─── Backup to localStorage on any unplanned closure ───
+  // ─── Periodic backup to localStorage ───
   const savedCleanlyRef = useRef(true);
 
   const backupPages = useCallback(() => {
@@ -1081,19 +1081,12 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     }
   }, [docId]);
 
-  // beforeunload: covers browser refresh, tab close, dev server restart
+  // Periodic backup every 30s while in edit mode with unsaved changes
   useEffect(() => {
-    if (!docId) return;
-    const onBeforeUnload = () => backupPages();
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [docId, backupPages]);
-
-  // Component unmount: covers React navigation, HMR unmount, etc.
-  useEffect(() => {
-    if (!docId) return;
-    return () => backupPages();
-  }, [docId, backupPages]);
+    if (!docId || !isEditMode) return;
+    const id = setInterval(backupPages, 30000);
+    return () => clearInterval(id);
+  }, [docId, isEditMode, backupPages]);
 
   // Sync sub-page edits back to pages state.
   // Uses pagesRef so handleSave always sees the latest data synchronously,
@@ -1101,12 +1094,14 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   // Lightweight sync for main page: update ref only, no setPages (avoids re-render cascade)
   const handleMainPageChange = useCallback((pageData) => {
     pagesRef.current = pagesRef.current.map(p => p.id === pageData.id ? pageData : p);
+    savedCleanlyRef.current = false;
   }, []);
 
   const handlePageChange = useCallback((pageData) => {
     pagesRef.current = pagesRef.current.map(p => p.id === pageData.id ? pageData : p);
     setPages(pagesRef.current);
     setHasUnsavedSubPageChanges(true);
+    savedCleanlyRef.current = false;
   }, []);
 
   const handleSave = useCallback(async (pageData) => {
@@ -1158,9 +1153,9 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     setHasUnsavedSubPageChanges(false);
   }, [onSave, docId]);
 
-  // Tab-bar exit: show save dialog if in edit mode, otherwise exit directly
+  // Tab-bar exit: show save dialog only if there are unsaved changes
   const handleExitClick = useCallback(() => {
-    if (isEditMode) {
+    if (isEditMode && !savedCleanlyRef.current) {
       setShowExitDialog(true);
     } else {
       onExit?.();
@@ -1443,7 +1438,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               )}
               {!readOnly && !isEditMode && (
                 <button
-                  onClick={() => { setIsEditMode(true); savedCleanlyRef.current = false; }}
+                  onClick={() => { setIsEditMode(true); }}
                   style={{
                     padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
                     borderRadius: '4px', background: 'white', cursor: 'pointer', whiteSpace: 'nowrap',
