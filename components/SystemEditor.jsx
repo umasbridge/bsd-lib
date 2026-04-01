@@ -7,6 +7,14 @@ import { toSystemMd } from '../lib/toSystemMd';
 import { replaceSuitAbbreviations, colorizeSuitSymbols, stripSuitColorSpans } from '../lib/suitSymbols';
 import { Search } from 'lucide-react';
 
+/** Run replaceSuitAbbreviations on text nodes only, leaving HTML tag attributes intact. */
+function replaceSuitsInTextNodes(html) {
+  return html.replace(/(<[^>]*>)|([^<]+)/g, (match, tag, text) => {
+    if (tag) return tag;
+    return replaceSuitAbbreviations(text);
+  });
+}
+
 // ─── ID generation ───
 
 let _rowIdCounter = 0;
@@ -265,6 +273,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
         borderWidth: elFmt.borderWidth ?? 1,
         fillColor: elFmt.fillColor ?? 'transparent',
         ...(elFmt.margin ? { margin: elFmt.margin } : {}),
+        ...(elFmt.showHeading ? { showHeading: true, heading: elFmt.heading || '', headingHtml: elFmt.headingHtml } : {}),
       });
     } else if (el.type === 'html') {
       pageElements.push({
@@ -361,6 +370,7 @@ export function transformToPages(system, formatting) {
         borderColor: elFmt.borderColor ?? '#d1d5db',
         borderWidth: elFmt.borderWidth ?? 1,
         fillColor: elFmt.fillColor ?? 'transparent',
+        ...(elFmt.showHeading ? { showHeading: true, heading: elFmt.heading || '', headingHtml: elFmt.headingHtml } : {}),
       });
     } else if (el.type === 'html') {
       mainElements.push({
@@ -802,10 +812,10 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
             // Hand diagram images: use as-is, no suit conversion (base64 would be corrupted)
             row.bidHtml = bh;
           } else if (bidHasRichHtml) {
-            // Has tags with attributes (links) — skip replaceSuitAbbreviations
-            // to avoid corrupting attribute values (UUIDs, URLs)
+            // Has tags with attributes (links) — convert text nodes only
             if (bh.includes('<a ')) bh = refreshLinkPageIds(bh, pageLookup);
-            row.bidHtml = colorizeSuitSymbols(stripSuitColorSpans(bh));
+            bh = stripSuitColorSpans(bh);
+            row.bidHtml = colorizeSuitSymbols(replaceSuitsInTextNodes(bh));
           } else {
             bh = stripSuitColorSpans(bh);
             bh = replaceSuitAbbreviations(bh);
@@ -821,7 +831,8 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
               const hasRichHtml = /data-page-id|data-discussion-id/.test(colHtml);
               if (hasRichHtml) {
                 if (colHtml.includes('<a ')) colHtml = refreshLinkPageIds(colHtml, pageLookup);
-                colHtml = colorizeSuitSymbols(stripSuitColorSpans(colHtml));
+                colHtml = stripSuitColorSpans(colHtml);
+                colHtml = colorizeSuitSymbols(replaceSuitsInTextNodes(colHtml));
               } else {
                 colHtml = stripSuitColorSpans(colHtml);
                 colHtml = replaceSuitAbbreviations(colHtml);
@@ -871,6 +882,12 @@ function extractElementFormatting(el) {
     // Preserve htmlContent if it contains styling or marks that markdown can't express
     if (el.htmlContent && /margin-left|margin-right|data-discussion-id/.test(el.htmlContent)) {
       fmt.htmlContent = el.htmlContent;
+    }
+    // Heading bar
+    if (el.showHeading) {
+      fmt.showHeading = true;
+      if (el.heading) fmt.heading = el.heading;
+      if (el.headingHtml) fmt.headingHtml = el.headingHtml;
     }
     return Object.keys(fmt).length > 0 ? fmt : null;
   }
@@ -1224,7 +1241,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
   }, [docId]);
 
   // Create a new page (chapter) and return its page ID
-  const handleCreatePage = useCallback((pageName, sourceElements) => {
+  const handleCreatePage = useCallback((pageName, sourceElements, renderedPage) => {
     // Convert suit abbreviations immediately so the page name is canonical from the start
     const convertedName = replaceSuitAbbreviations(pageName);
     // Slug uses ASCII form — reverse any suit symbols to letters first
@@ -1235,57 +1252,38 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     // Check if page already exists (exact match)
     if (pagesRef.current.some(p => p.id === pageId)) return null;
 
-    // If sourceElements provided (from Conventions), transform them into page elements
-    let pageElements = [];
-    if (sourceElements && sourceElements.length > 0) {
-      const pageLookup = buildPageLookup(systemRef.current?.pages || []);
-      for (let i = 0; i < sourceElements.length; i++) {
-        const el = sourceElements[i];
-        if (el.type === 'table') {
-          const rows = (el.rows || []).map((row) => mapRow(row, pageLookup));
-          pageElements.push({
-            id: `${slug}-el-${i}`,
-            type: 'bidtable',
-            order: i + 1,
-            name: el.name || '',
-            nameHtml: `<span style="font-weight: 700">${el.name || ''}</span>`,
-            showName: !!el.name,
-            width: 620,
-            columnWidths: [480],
-            levelWidths: { 0: 80 },
-            gridlines: { enabled: true, color: '#D1D5DB', width: 1 },
-            borderColor: '#d1d5db',
-            borderWidth: 1,
-            rows,
-          });
-        } else if (el.type === 'note') {
-          const htmlContent = colorizeSuitSymbols(replaceSuitAbbreviations(el.content || ''));
-          pageElements.push({
-            id: `${slug}-el-${i}`,
-            type: 'text',
-            order: i + 1,
-            content: el.content || '',
-            htmlContent,
-            width: 580,
-            borderColor: '#d1d5db',
-            borderWidth: 1,
-            fillColor: 'transparent',
-          });
-        }
-      }
-    }
+    let newPage;
 
-    // Create new page data object
-    const newPage = {
-      id: pageId,
-      title: convertedName,
-      originalName: convertedName,
-      titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(convertedName)}</span>`,
-      leftMargin: 20,
-      rightMargin: 20,
-      elementSpacing: 30,
-      elements: pageElements,
-    };
+    if (renderedPage) {
+      // Clone the already-rendered convention page with new IDs
+      const clonedElements = renderedPage.elements.map((el, i) => ({
+        ...JSON.parse(JSON.stringify(el)),
+        id: `${slug}-el-${i}`,
+        order: i + 1,
+      }));
+      newPage = {
+        id: pageId,
+        title: convertedName,
+        originalName: convertedName,
+        titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(convertedName)}</span>`,
+        leftMargin: renderedPage.leftMargin ?? 20,
+        rightMargin: renderedPage.rightMargin ?? 20,
+        elementSpacing: renderedPage.elementSpacing ?? 30,
+        elements: clonedElements,
+      };
+    } else {
+      // Blank new page (no convention source)
+      newPage = {
+        id: pageId,
+        title: convertedName,
+        originalName: convertedName,
+        titleHtml: `<span style="font-weight: 700">${colorizeSuitSymbols(convertedName)}</span>`,
+        leftMargin: 20,
+        rightMargin: 20,
+        elementSpacing: 30,
+        elements: [],
+      };
+    }
 
     // Add to pages ref immediately (so link clicks can find it right away)
     pagesRef.current = [...pagesRef.current, newPage];

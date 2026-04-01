@@ -367,6 +367,11 @@ export function Page({
             onDelete={() => deleteElement(element.id)}
             onMoveUp={!isFirst ? () => moveElement(element.id, 'up') : undefined}
             onMoveDown={!isLast ? () => moveElement(element.id, 'down') : undefined}
+            showHeading={!!element.showHeading}
+            heading={element.heading || ''}
+            headingHtml={element.headingHtml}
+            onHeadingChange={(text, html) => updateElement(element.id, { heading: text, headingHtml: html })}
+            onToggleHeading={() => updateElement(element.id, { showHeading: !element.showHeading })}
             {...selectProps}
           />
         </div>

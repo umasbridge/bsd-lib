@@ -58,6 +58,12 @@ export function TextEl({
   maxWidth,
   onWidthChange,
   linkMode,
+  // Heading bar props
+  showHeading = false,
+  heading = '',
+  headingHtml,
+  onHeadingChange,
+  onToggleHeading,
 }) {
   const effectiveMinHeight = minHeight ?? (mode === 'cell' ? 20 : LAYOUT.MIN_ELEMENT_HEIGHT);
 
@@ -357,6 +363,8 @@ export function TextEl({
                 onDelete={onDelete}
                 onMoveUp={onMoveUp}
                 onMoveDown={onMoveDown}
+                showHeading={showHeading}
+                onToggleHeading={onToggleHeading}
               />
             )}
 
@@ -374,6 +382,24 @@ export function TextEl({
                 onLeftIndentChange={handleRulerLeftChange}
                 onRightIndentChange={handleRulerRightChange}
               />
+            )}
+
+            {/* Heading bar */}
+            {showHeading && (
+              <div
+                className="px-2 py-1 border-b border-gray-200 bg-gray-50/50"
+                style={{ minHeight: '24px' }}
+              >
+                <TextEl
+                  mode="cell"
+                  value={heading}
+                  htmlValue={headingHtml}
+                  onChange={(text, html) => onHeadingChange?.(text, html)}
+                  placeholder="Heading"
+                  minHeight={24}
+                  readOnly={readOnly}
+                />
+              </div>
             )}
 
             {/* Tiptap editor */}

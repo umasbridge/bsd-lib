@@ -411,7 +411,7 @@ export function useTiptapEditor(options) {
 
     // Create new page if requested (optionally with source elements from Conventions)
     if (target.isNewPage && onCreatePage) {
-      pageId = onCreatePage(target.pageName, target.sourceElements || undefined);
+      pageId = onCreatePage(target.pageName, target.sourceElements || undefined, target.renderedPage || undefined);
       if (!pageId) {
         alert('A page with that name already exists. Use a different name.');
         return;

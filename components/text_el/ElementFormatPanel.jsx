@@ -6,6 +6,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  Heading2,
 } from 'lucide-react';
 
 const BORDER_COLORS = [
@@ -36,6 +37,8 @@ export function ElementFormatPanel({
   onDelete,
   onMoveUp,
   onMoveDown,
+  showHeading,
+  onToggleHeading,
 }) {
   const [showBorderColor, setShowBorderColor] = useState(false);
   const [showBorderWidth, setShowBorderWidth] = useState(false);
@@ -149,6 +152,17 @@ export function ElementFormatPanel({
           </div>
         )}
       </div>
+
+      {/* Heading Toggle */}
+      {onToggleHeading && (
+        <button
+          className={`h-7 w-7 flex items-center justify-center rounded hover:bg-gray-200 ${showHeading ? 'bg-blue-100 text-blue-600' : ''}`}
+          onClick={() => onToggleHeading()}
+          title={showHeading ? 'Remove Heading' : 'Add Heading'}
+        >
+          <Heading2 className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       <div className="w-px h-5 bg-gray-300 mx-1" />
 

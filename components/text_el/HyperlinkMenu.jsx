@@ -116,7 +116,8 @@ export function HyperlinkMenu({
         pageName: newPageName.trim(),
         mode: selectedMode,
         isNewPage: true,
-        sourceElements: selectedConvention?.elements || undefined,
+        sourceElements: selectedConvention?.sourceElements || undefined,
+        renderedPage: selectedConvention?.renderedPage || undefined,
       });
       return;
     }
