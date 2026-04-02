@@ -273,7 +273,7 @@ export function TextEl({
           className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
           style={{
             left: viewModeSelection.position.x - 16,
-            top: viewModeSelection.position.y - 40,
+            top: viewModeSelection.position.bottom + 8,
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >

@@ -59,6 +59,9 @@ export function useTiptapEditor(options) {
   const onBlurRef = useRef(onBlur);
   onBlurRef.current = onBlur;
 
+  // Flag to suppress onUpdate during setEditable toggle
+  const suppressUpdateRef = useRef(false);
+
   // Configure Tiptap extensions
   const editor = useEditor({
     extensions: [
@@ -131,6 +134,8 @@ export function useTiptapEditor(options) {
       },
     },
     onUpdate({ editor: ed }) {
+      // Skip updates triggered by setEditable toggle (not real user edits)
+      if (suppressUpdateRef.current) return;
       // Strip trailing empty paragraphs so they don't add extra height
       let html = ed.getHTML();
       while (html.endsWith('<p></p>') || html.endsWith('<p><br></p>')) {
@@ -163,10 +168,12 @@ export function useTiptapEditor(options) {
     },
   }, []);
 
-  // Sync readOnly changes
+  // Sync readOnly changes — suppress onUpdate during toggle
   useEffect(() => {
     if (editor) {
+      suppressUpdateRef.current = true;
       editor.setEditable(!readOnly);
+      suppressUpdateRef.current = false;
     }
   }, [editor, readOnly]);
 

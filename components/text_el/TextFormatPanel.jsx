@@ -53,7 +53,8 @@ export function TextFormatPanel({
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     const panelHeight = 44;
     const gap = 6;
-    const placeAbove = rect.top - panelHeight - gap > 0;
+    const isTouchDevice = 'ontouchstart' in window;
+    const placeAbove = !isTouchDevice && (rect.top - panelHeight - gap > 0);
     const topPos = placeAbove ? rect.top - panelHeight - gap : rect.bottom + gap;
     const panelWidth = panelRef.current.offsetWidth || 320;
     let leftPos = Math.max(10, rect.left + rect.width / 2 - 160);
