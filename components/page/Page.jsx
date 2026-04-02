@@ -46,6 +46,7 @@ export function Page({
   readOnly = false,
   onSearch,
   onReturnToResults,
+  onEditRequest,
 }) {
   const isMain = mode === 'main';
   const isPopup = mode === 'popup';
@@ -722,7 +723,14 @@ export function Page({
                 )}
                 {isViewMode && !readOnly && (
                   <button
-                    onClick={() => { setIsViewMode(false); onEditModeChange?.(true); }}
+                    onClick={async () => {
+                      if (onEditRequest) {
+                        const result = await onEditRequest();
+                        if (!result?.allowed) return;
+                      }
+                      setIsViewMode(false);
+                      onEditModeChange?.(true);
+                    }}
                     style={{
                       padding: '6px 12px', fontSize: '14px', border: '1px solid #d1d5db',
                       borderRadius: '6px', background: 'white', cursor: 'pointer',

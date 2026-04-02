@@ -1506,6 +1506,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                   startInEditMode={readOnly ? false : isEditMode}
                   readOnly={readOnly}
                   onEditModeChange={setIsEditMode}
+                  onEditRequest={onEditRequest}
                   externalDirty={hasUnsavedSubPageChanges}
                   onSearch={onSearch}
                   onReturnToResults={onReturnToResults}
