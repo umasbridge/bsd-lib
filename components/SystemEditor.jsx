@@ -1047,7 +1047,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply, onSearch, onReturnToResults, navigateRef }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply, onSearch, onReturnToResults, navigateRef, onEditRequest, lockBanner, onEditExit }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -1158,9 +1158,10 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     if (isEditMode && !savedCleanlyRef.current) {
       setShowExitDialog(true);
     } else {
+      if (isEditMode) onEditExit?.();
       onExit?.();
     }
-  }, [isEditMode, onExit]);
+  }, [isEditMode, onExit, onEditExit]);
 
   // Register exit trigger so App can invoke it on back-swipe
   useEffect(() => {
@@ -1438,7 +1439,14 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               )}
               {!readOnly && !isEditMode && (
                 <button
-                  onClick={() => { setIsEditMode(true); }}
+                  onClick={async () => {
+                    if (onEditRequest) {
+                      const result = await onEditRequest();
+                      if (result?.allowed) setIsEditMode(true);
+                    } else {
+                      setIsEditMode(true);
+                    }
+                  }}
                   style={{
                     padding: '4px 12px', fontSize: '13px', border: '1px solid #d1d5db',
                     borderRadius: '4px', background: 'white', cursor: 'pointer', whiteSpace: 'nowrap',
@@ -1463,6 +1471,15 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                 </button>
               )}
             </div>
+          </div>
+        )}
+
+        {lockBanner && (
+          <div style={{
+            background: '#fef3c7', borderBottom: '1px solid #f59e0b', padding: '8px 16px',
+            fontSize: '13px', color: '#92400e', textAlign: 'center',
+          }}>
+            Currently being edited by {lockBanner}
           </div>
         )}
 
@@ -1552,7 +1569,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
               </p>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
-                  onClick={() => { setShowExitDialog(false); onExit?.(); }}
+                  onClick={() => { setShowExitDialog(false); onEditExit?.(); onExit?.(); }}
                   style={{
                     padding: '6px 14px', fontSize: '14px', border: '1px solid #d1d5db',
                     borderRadius: '6px', background: 'white', cursor: 'pointer',
@@ -1561,7 +1578,7 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
                   Discard changes
                 </button>
                 <button
-                  onClick={async () => { setShowExitDialog(false); await handleFullSave(); onExit?.(); }}
+                  onClick={async () => { setShowExitDialog(false); await handleFullSave(); onEditExit?.(); onExit?.(); }}
                   style={{
                     padding: '6px 14px', fontSize: '14px', borderRadius: '6px', cursor: 'pointer',
                     border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', fontWeight: 500,
