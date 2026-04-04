@@ -17,6 +17,7 @@ const EditorContext = createContext({
   onDiscussionHighlightClick: null,
   documentDiscussions: null, // null (not []) so components without EditorProvider don't trigger stale cleanup
   onAfterDiscussionApply: null,
+  unreadDiscussionIds: null, // ref object: { current: Set<string> }
 });
 
 export const EditorProvider = EditorContext.Provider;

@@ -73,7 +73,16 @@
   user-select: none;
 }
 
-.disc-hl::after {
+.disc-hl-unread {
+  background-color: #bbf7d0;
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.disc-hl::after,
+.disc-hl-unread::after {
   content: '💬';
   font-size: 0.75em;
   margin-left: 1px;

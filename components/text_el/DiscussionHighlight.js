@@ -42,6 +42,7 @@ export const DiscussionHighlight = Node.create({
   addOptions() {
     return {
       onDiscussionHighlightClick: null, // ref object: { current: ({ discussionId, position }) => void }
+      unreadDiscussionIds: null, // ref object: { current: Set<string> }
     };
   },
 
@@ -69,10 +70,13 @@ export const DiscussionHighlight = Node.create({
   },
 
   addNodeView() {
+    const unreadRef = this.options.unreadDiscussionIds;
     return ({ node }) => {
+      const discId = node.attrs['data-discussion-id'];
       const span = document.createElement('span');
-      span.setAttribute('data-discussion-id', node.attrs['data-discussion-id']);
-      span.className = 'disc-hl';
+      span.setAttribute('data-discussion-id', discId);
+      const isUnread = unreadRef?.current?.has?.(discId);
+      span.className = isUnread ? 'disc-hl-unread' : 'disc-hl';
       span.textContent = node.attrs.text;
       span.contentEditable = 'false';
       return { dom: span };

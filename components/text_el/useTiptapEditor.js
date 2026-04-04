@@ -28,7 +28,7 @@ import { useEditorContext } from '../EditorContext';
  */
 export function useTiptapEditor(options) {
   const { mode, initialHtml, onChange, onFocus, onBlur, readOnly, pageId, elementIndex, rowIndex, colIndex } = options;
-  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply } = useEditorContext();
+  const { onHyperlinkClick, onCreatePage, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply, unreadDiscussionIds } = useEditorContext();
   const features = MODE_FEATURES[mode];
 
   // State matching useRichText's API
@@ -88,6 +88,7 @@ export function useTiptapEditor(options) {
       }),
       DiscussionHighlight.configure({
         onDiscussionHighlightClick: onDiscussionHighlightClickRef,
+        unreadDiscussionIds: unreadDiscussionIds,
       }),
       FontSize,
       ListStyleType,

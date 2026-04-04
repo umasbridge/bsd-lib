@@ -1047,7 +1047,7 @@ function reverseTransformPages(pages, originalSystem) {
  * @param {object} formatting - Display formatting overrides (keyed by page id)
  * @param {function} onSave - Called with { md, formatting } when user saves
  */
-export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply, onSearch, onReturnToResults, navigateRef, onEditRequest, lockBanner, onEditExit }) {
+export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit, startInEditMode = false, startPageId = null, docId = null, readOnly = false, exitTriggerRef, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, onAfterDiscussionApply, onSearch, onReturnToResults, navigateRef, onEditRequest, lockBanner, onEditExit, unreadDiscussionIds }) {
   // Parse md once on mount (and when md prop changes)
   const systemRef = useRef(null);
   const formattingRef = useRef(initialFormatting || {});
@@ -1324,7 +1324,8 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
     onDiscussionHighlightClick,
     documentDiscussions,
     onAfterDiscussionApply: handleAfterDiscussionApply,
-  }), [availablePages, handleHyperlinkClick, handleCreatePage, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, handleAfterDiscussionApply]);
+    unreadDiscussionIds,
+  }), [availablePages, handleHyperlinkClick, handleCreatePage, conventionsPages, onCreateDiscussion, onAddToDiscussion, onDiscussionHighlightClick, documentDiscussions, handleAfterDiscussionApply, unreadDiscussionIds]);
 
   const mainPage = (startPageId && pages.find((p) => p.id === startPageId)) || pages.find((p) => p.id === 'main');
 
