@@ -22,6 +22,34 @@ function uid() {
   return `r-${++_rowIdCounter}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+// ─── Stable IDs (gated by formatting._idsEnabled) ───
+function generateStableId() {
+  return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `sid-${Math.random().toString(36).slice(2, 10)}`;
+}
+function applyPersistedRowIds(rows, rowIds) {
+  if (!Array.isArray(rowIds) || rowIds.length === 0) return;
+  let i = 0;
+  const walk = (list) => {
+    for (const row of list) {
+      if (i < rowIds.length && rowIds[i]) row.id = rowIds[i];
+      i++;
+      if (row.children?.length) walk(row.children);
+    }
+  };
+  walk(rows);
+}
+function flattenRowIds(rows) {
+  const out = [];
+  const walk = (list) => {
+    for (const row of list) {
+      out.push(row.id);
+      if (row.children?.length) walk(row.children);
+    }
+  };
+  walk(rows || []);
+  return out;
+}
+
 /** Strip inline font-size styles so text inherits the editor's 14px default. */
 function stripFontSize(html) {
   if (!html) return html;
@@ -236,6 +264,7 @@ function reorderElements(elements, pageFmt) {
 }
 
 function buildPage(sourcePage, pageLookup, formatting) {
+  const idsEnabled = formatting?._idsEnabled === true;
   const pageId = `page-${sourcePage.id}`;
   const pageFmt = formatting?.[pageId] || {};
   const pageElements = [];
@@ -264,6 +293,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
 
       pageElements.push({
         id: `${sourcePage.id}-el-${i}`,
+        ...(idsEnabled ? { stableId: elFmt.stableId || generateStableId() } : {}),
         type: 'text',
         order: i + 1,
         content: stripBold(el.content),
@@ -278,6 +308,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
     } else if (el.type === 'html') {
       pageElements.push({
         id: `${sourcePage.id}-el-${i}`,
+        ...(idsEnabled ? { stableId: elFmt.stableId || generateStableId() } : {}),
         type: 'html',
         order: i + 1,
         content: el.content,
@@ -287,8 +318,10 @@ function buildPage(sourcePage, pageLookup, formatting) {
       const rows = (el.rows || []).map((row) => mapRow(row, pageLookup));
       applyRowMerges(rows, elFmt.rowMerges);
       applyRowHtml(rows, elFmt.rowHtml, pageLookup);
+      if (idsEnabled) applyPersistedRowIds(rows, elFmt.rowIds);
       const bidtableEl = {
         id: `${sourcePage.id}-el-${i}`,
+        ...(idsEnabled ? { stableId: elFmt.stableId || generateStableId() } : {}),
         type: 'bidtable',
         order: i + 1,
         name: el.name,
@@ -329,6 +362,7 @@ function buildPage(sourcePage, pageLookup, formatting) {
 export function transformToPages(system, formatting) {
   _rowIdCounter = 0;
 
+  const idsEnabled = formatting?._idsEnabled === true;
   const { systemName, description, rootElements = [], pages: sourcePages = [] } = system;
   const pageLookup = buildPageLookup(sourcePages);
   const mainFmt = formatting?.main || {};
@@ -362,6 +396,7 @@ export function transformToPages(system, formatting) {
       }
       mainElements.push({
         id: `main-el-${elIdx}`,
+        ...(idsEnabled ? { stableId: elFmt.stableId || generateStableId() } : {}),
         type: 'text',
         order: elIdx + 1,
         content: stripBold(el.content),
@@ -375,6 +410,7 @@ export function transformToPages(system, formatting) {
     } else if (el.type === 'html') {
       mainElements.push({
         id: `main-el-${elIdx}`,
+        ...(idsEnabled ? { stableId: elFmt.stableId || generateStableId() } : {}),
         type: 'html',
         order: elIdx + 1,
         content: el.content,
@@ -384,8 +420,10 @@ export function transformToPages(system, formatting) {
       const rows = (el.rows || []).map((row) => mapRow(row, pageLookup));
       applyRowMerges(rows, elFmt.rowMerges);
       applyRowHtml(rows, elFmt.rowHtml, pageLookup);
+      if (idsEnabled) applyPersistedRowIds(rows, elFmt.rowIds);
       const bidtableEl = {
         id: `main-el-${elIdx}`,
+        ...(idsEnabled ? { stableId: elFmt.stableId || generateStableId() } : {}),
         type: 'bidtable',
         order: elIdx + 1,
         name: el.name,
@@ -869,11 +907,13 @@ function applyRowHtml(rows, rowHtml, pageLookup) {
 function extractElementFormatting(el) {
   if (el.type === 'html') {
     const fmt = {};
+    if (el.stableId) fmt.stableId = el.stableId;
     if (el.width !== undefined && el.width !== 1160) fmt.width = el.width;
     return Object.keys(fmt).length > 0 ? fmt : null;
   }
   if (el.type === 'text') {
     const fmt = {};
+    if (el.stableId) fmt.stableId = el.stableId;
     if (el.width !== undefined && el.width !== 580) fmt.width = el.width;
     if (el.borderColor && el.borderColor !== '#d1d5db') fmt.borderColor = el.borderColor;
     if (el.borderWidth !== undefined && el.borderWidth !== 1) fmt.borderWidth = el.borderWidth;
@@ -893,6 +933,10 @@ function extractElementFormatting(el) {
   }
   if (el.type === 'bidtable') {
     const fmt = {};
+    if (el.stableId) {
+      fmt.stableId = el.stableId;
+      fmt.rowIds = flattenRowIds(el.rows);
+    }
     if (el.width !== undefined && el.width !== 620) fmt.width = el.width;
     if (el.columnWidths && JSON.stringify(el.columnWidths) !== '[480]') fmt.columnWidths = el.columnWidths;
     if (el.levelWidths && JSON.stringify(el.levelWidths) !== JSON.stringify({ 0: 80 })) fmt.levelWidths = el.levelWidths;
@@ -1120,6 +1164,10 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
       if (formattingRef.current._highlights) {
         formatting._highlights = formattingRef.current._highlights;
       }
+      // Preserve _idsEnabled flag (gates the stable-ID persistence feature)
+      if (formattingRef.current._idsEnabled) {
+        formatting._idsEnabled = formattingRef.current._idsEnabled;
+      }
       const newMd = toSystemMd(system);
       systemRef.current = system;
       formattingRef.current = formatting;
@@ -1143,6 +1191,10 @@ export function SystemEditor({ md, formatting: initialFormatting, onSave, onExit
       // Preserve _highlights from previous formatting (cross-device discussion index)
       if (formattingRef.current._highlights) {
         formatting._highlights = formattingRef.current._highlights;
+      }
+      // Preserve _idsEnabled flag (gates the stable-ID persistence feature)
+      if (formattingRef.current._idsEnabled) {
+        formatting._idsEnabled = formattingRef.current._idsEnabled;
       }
       const newMd = toSystemMd(system);
       systemRef.current = system;
