@@ -535,7 +535,14 @@ export function useTiptapEditor(options) {
     if (wasReadOnly) editor.setEditable(false);
 
     setShowDiscussionMenu(false);
-    onAfterDiscussionApply?.({ pageId, elementIndex, rowIndex, colIndex, html: editor.getHTML() });
+    const _html = editor.getHTML();
+    console.log('[disc-hl] bsd-lib firing onAfterDiscussionApply', {
+      pageId, elementIndex, rowIndex, colIndex,
+      hasCallback: !!onAfterDiscussionApply,
+      htmlHasSpan: /data-discussion-id/.test(_html),
+      htmlSnippet: _html.slice(0, 300),
+    });
+    onAfterDiscussionApply?.({ pageId, elementIndex, rowIndex, colIndex, html: _html });
   }, [editor, onCreateDiscussion, onAddToDiscussion, onAfterDiscussionApply, pageId, elementIndex, rowIndex, colIndex]);
 
   const openFormatPanel = useCallback(() => setShowFormatPanel(true), []);
