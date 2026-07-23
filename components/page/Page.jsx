@@ -240,6 +240,19 @@ export function Page({
     onEditModeChange?.(false);
   }, [onSave, onEditModeChange]);
 
+  // In-place save: persist without leaving edit mode or exiting
+  const [saving, setSaving] = useState(false);
+  const handleSaveInPlace = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave?.(pageRef.current);
+      setIsDirty(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [onSave, saving]);
+
   const handleDiscard = useCallback(() => {
     const fresh = JSON.parse(JSON.stringify(initialPage));
     pageRef.current = fresh;
@@ -548,17 +561,34 @@ export function Page({
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             {isMain && (
-              <button
-                onClick={handleViewSaveToggle}
-                style={{
-                  padding: '4px 8px', fontSize: '12px', borderRadius: '4px', cursor: 'pointer',
-                  border: '1px solid #d1d5db', background: 'white',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
-              >
-                Exit
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={handleViewSaveToggle}
+                  style={{
+                    padding: '4px 8px', fontSize: '12px', borderRadius: '4px', cursor: 'pointer',
+                    border: '1px solid #d1d5db', background: 'white',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                >
+                  Exit
+                </button>
+                {!isViewMode && !readOnly && (
+                  <button
+                    onClick={handleSaveInPlace}
+                    disabled={saving || !(isDirty || externalDirty)}
+                    style={{
+                      padding: '4px 8px', fontSize: '12px', borderRadius: '4px',
+                      cursor: (saving || !(isDirty || externalDirty)) ? 'default' : 'pointer',
+                      border: '1px solid #93c5fd',
+                      background: (isDirty || externalDirty) ? '#eff6ff' : 'white',
+                      color: (isDirty || externalDirty) ? '#1d4ed8' : '#9ca3af',
+                    }}
+                  >
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                )}
+              </div>
             )}
             {!isMain && <div />}
             {!isViewMode && (
@@ -739,6 +769,23 @@ export function Page({
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
                   >
                     Edit
+                  </button>
+                )}
+                {!isViewMode && !readOnly && (
+                  <button
+                    onClick={handleSaveInPlace}
+                    disabled={saving || !(isDirty || externalDirty)}
+                    style={{
+                      padding: '6px 12px', fontSize: '14px', borderRadius: '6px',
+                      cursor: (saving || !(isDirty || externalDirty)) ? 'default' : 'pointer',
+                      border: '1px solid #93c5fd',
+                      background: (isDirty || externalDirty) ? '#eff6ff' : 'white',
+                      color: (isDirty || externalDirty) ? '#1d4ed8' : '#9ca3af',
+                      fontWeight: 500,
+                    }}
+                    title={(isDirty || externalDirty) ? 'Save without exiting' : 'No changes since last save'}
+                  >
+                    {saving ? 'Saving…' : 'Save'}
                   </button>
                 )}
                 <button
